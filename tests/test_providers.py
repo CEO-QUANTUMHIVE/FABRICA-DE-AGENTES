@@ -50,3 +50,34 @@ def test_crear_llm_devuelve_un_llm_de_groq():
     from livekit.plugins import groq
 
     assert isinstance(llm.crear(cargar(ENTORNO)), groq.LLM)
+
+
+from motor_voz.voice.providers import tts
+
+
+def test_opciones_tts_usan_latencia_baja():
+    """El default del plugin es 'balanced'. Para Live queremos 'low'."""
+    opciones = tts.opciones(cargar(ENTORNO))
+    assert opciones["latency_mode"] == "low"
+
+
+def test_opciones_tts_usan_el_modelo_del_spec():
+    opciones = tts.opciones(cargar(ENTORNO))
+    assert opciones["model"] == "s2.1-pro"
+
+
+def test_opciones_tts_omiten_voice_id_si_no_esta_configurado():
+    """Sin voice_id, el plugin usa su voz por defecto en vez de romper."""
+    opciones = tts.opciones(cargar(ENTORNO))
+    assert "voice_id" not in opciones
+
+
+def test_opciones_tts_incluyen_voice_id_si_esta_configurado():
+    opciones = tts.opciones(cargar(ENTORNO | {"FISH_VOICE_ID": "voz-argentina-01"}))
+    assert opciones["voice_id"] == "voz-argentina-01"
+
+
+def test_crear_tts_devuelve_un_tts_de_fishaudio():
+    from livekit.plugins import fishaudio
+
+    assert isinstance(tts.crear(cargar(ENTORNO)), fishaudio.TTS)
