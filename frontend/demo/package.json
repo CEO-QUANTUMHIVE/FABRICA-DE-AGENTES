@@ -1,0 +1,14 @@
+{
+  "name": "motor-voz-demo",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite"
+  },
+  "dependencies": {
+    "livekit-client": "^2.7.0"
+  },
+  "devDependencies": {
+    "vite": "^6.0.0"
+  }
+}
