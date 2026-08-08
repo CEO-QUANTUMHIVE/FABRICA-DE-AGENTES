@@ -231,14 +231,39 @@ El español se cobra por bytes UTF-8; las tildes y la ñ ocupan 2 bytes, lo que 
 
 ### Techo de concurrencia
 
-| Servicio | Límite inicial |
-|---|---|
-| Fish Audio (< $100 pagados) | **5 solicitudes concurrentes** |
-| LiveKit Build | **5 sesiones de agente concurrentes** |
+| Servicio | Límite inicial | Cómo escala |
+|---|---|---|
+| Fish Audio | **5 solicitudes concurrentes** con < $100 consumidos | 15 con $100, 50 con $1.000, luego Enterprise |
+| LiveKit **Cloud** Build | **5 sesiones de agente concurrentes** | Planes pagos, o **desaparece self-hosteando** |
 
-**El techo real de arranque son 5 conversaciones Live simultáneas.** No lo levanta el presupuesto: Fish sube a 15 recién con $100 acumulados de consumo.
+**LiveKit no impone ningún techo.** `livekit/livekit` es Apache-2.0, se self-hostea, y no tiene fee por minuto ni tope de participantes. El límite de 5 es del plan Build de LiveKit **Cloud**. Migrar de Cloud a self-hosted es cambiar `LIVEKIT_URL`: el código del agente no se toca. Se desarrolla contra Cloud y se migra cuando duela.
 
-Con varias demos públicas en la Web Factory, ese techo se toca. La respuesta es una **cola con mensaje honesto** en vez de un error, y que el guión cacheado no consuma slots: solo compiten por los 5 las consultas Live reales.
+El techo de Fish es un **problema de arranque en frío**, no un tope final: sus tramos suben con el consumo acumulado. Aun así, depender de un solo proveedor viola el §34 del contexto maestro.
+
+### Estrategia de concurrencia en tres capas
+
+1. **Cache.** Todo lo guionado va pregrabado y **no consume ningún slot**: onboarding, catálogo vivo, saludos, confirmaciones, respuestas frecuentes. Elimina la mayor parte de la demanda.
+2. **Pool de proveedores.** `voice/providers/tts/` nace como **router sobre varios proveedores**, no como un proveedor único. Los slots se suman. El router elige por disponibilidad, voz solicitada, latencia y costo, y cae al siguiente cuando uno se satura. Ver §9.bis.
+3. **TTS self-hosteado.** Un modelo propio con licencia que permita uso comercial convierte la concurrencia en función de la GPU contratada, sin cuota de terceros. Investigación delegada en `docs/briefs/2026-08-08-investigacion-tts-rioplatense.md`.
+
+Mientras las tres capas no estén, el pico se maneja con **cola y mensaje honesto**, nunca con un error crudo.
+
+### 9.bis Contrato del pool de TTS
+
+```text
+TTSProvider (interfaz)
+  synthesize(texto, voice_id, formato) -> audio
+  supports_streaming: bool
+  max_concurrent: int
+  slots_libres() -> int
+  costo_por_1k_bytes: float
+```
+
+El router mantiene el pool y aplica, en orden: proveedor que tenga la voz pedida → con slot libre → de menor latencia → de menor costo. Si ninguno tiene slot, encola y avisa.
+
+`fish-speech` **no puede** entrar al pool self-hosteado: su licencia prohíbe expresamente el uso comercial, incluido el servicio hosteado. Verificado el 2026-08-08.
+
+Ningún módulo fuera del router conoce el proveedor concreto. Agregar, quitar o cambiar un TTS es configuración, no código.
 
 ### Controles de gasto y abuso
 
@@ -377,7 +402,9 @@ Se mantiene un **monolito modular**. La única división interna que importa hoy
 | Riesgo | Impacto | Mitigación |
 |---|---|---|
 | Fish `s2.1-pro-free` vence el 31/08/2026 | El TTS pasa de gratis a $15/1M bytes | El modelo sale de configuración; cambiar es una variable de entorno |
-| Techo de 5 concurrentes | La sexta persona no entra | Cola con mensaje honesto y cacheo que no consume slots |
+| Techo de 5 concurrentes en Fish | La sexta conversación Live encola | Las tres capas del §9: cache, pool de proveedores y TTS propio |
+| Techo de 5 sesiones en LiveKit Cloud Build | Tope de conversaciones simultáneas | Self-hostear `livekit/livekit` (Apache-2.0). Es cambiar `LIVEKIT_URL` |
+| No conseguir un TTS comercial con acento rioplatense | El pool queda con un solo proveedor y vuelve el techo | Investigación delegada; si falla, negociar tramo alto con Fish |
 | Acento neutro en español | La demo suena extranjera y pierde cercanía | Gate explícito en la Fase 4 |
 | RLS no protege bajo service_role | Un error de código expone datos entre tenants | Capa única de repositorios más test que lo bloquea |
 | Dependencia de LiveKit | Difícil de revertir | `brain/` no lo importa; cambiar de transporte no toca el cerebro |
