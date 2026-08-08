@@ -47,7 +47,7 @@ UN RUNTIME + PERFILES POR VERTICAL + CONFIGURACIÓN POR TENANT
 | 4 | Estructura | Un repo, dos paquetes blindados: `voice/` y `brain/` |
 | 5 | Groq | Pago por uso. API key y facturación ya activas |
 | 6 | Fish Audio | Pago por uso. `s2.1-pro`, con `s2.1-pro-free` por configuración |
-| 7 | Transporte Live | LiveKit Cloud (plan Build al arranque) |
+| 7 | Transporte Live | **LiveKit self-hosted.** El binario `livekit-server` corre en nuestro backend. **LiveKit Cloud queda fuera de alcance** |
 | 8 | Control plane | Supabase |
 | 9 | Ubicación local | `C:\Users\sergio\Desktop\MOTOR-DE-VOZ`, fuera de la bóveda |
 
@@ -211,34 +211,51 @@ Se usa el **plugin directo con `GROQ_API_KEY` propia**, no LiveKit Inference. Lo
 | Groq `openai/gpt-oss-120b` | $0,15 entrada / $0,60 salida por 1M tokens |
 | Fish `s2.1-pro` | $0,015 / 1.000 bytes UTF-8 (= $15 / 1M) |
 | Fish `Transcribe-1` | $0,006 / minuto (no se usa: Groq es 9× más barato) |
-| LiveKit Cloud, minutos de agente | $0,01 / min, con 1.000 incluidos en Build |
+| LiveKit self-hosted | $0 por minuto. Costo fijo del VPS, no por conversación |
 
 ### Costo estimado de una conversación Live de 4 minutos
 
-| Componente | Costo | Peso |
+| Componente | Costo variable | Peso |
 |---|---|---|
-| Groq STT | $0,003 | 3% |
-| Groq LLM | $0,004 | 4% |
-| Fish TTS | $0,045 | 49% |
-| LiveKit | $0,040 | 44% |
-| **Total** | **≈ $0,09** | |
+| Groq STT | $0,003 | 6% |
+| Groq LLM | $0,004 | 8% |
+| Fish TTS | $0,045 | **86%** |
+| LiveKit self-hosted | $0 | costo fijo del VPS |
+| **Total variable** | **≈ $0,052** | |
 
 Supuestos: ~15 turnos, ~40K tokens de entrada acumulados, ~3.000 bytes sintetizados.
 
-**Conclusión que ordena el diseño: Groq es el 8% del costo. Fish y LiveKit son el 92%.** El ahorro no está en recortar el prompt: está en **no sintetizar audio** y en **no tener rooms abiertos**. Por eso el cacheo es la estrategia central y no una optimización.
+**Conclusión que ordena el diseño: el TTS es el 86% del costo variable. Groq es el 14%.** El ahorro no está en recortar el prompt: está en **no sintetizar audio**. Por eso el cacheo es la estrategia central y no una optimización — cada segmento pregrabado que se reutiliza es costo cero y concurrencia cero.
+
+Al self-hostear LiveKit el transporte sale del costo por conversación y pasa a ser un gasto fijo mensual de servidor, independiente del volumen.
 
 El español se cobra por bytes UTF-8; las tildes y la ñ ocupan 2 bytes, lo que agrega ~5-8% sobre el conteo de caracteres.
 
 ### Techo de concurrencia
 
-| Servicio | Límite inicial | Cómo escala |
+**LiveKit no impone ningún techo, porque lo self-hosteamos.** `livekit/livekit` es Apache-2.0: sin fee por minuto, sin tope de participantes, sin cuenta de terceros. El único límite es el CPU y el ancho de banda del servidor propio. LiveKit Cloud no se usa en ninguna etapa.
+
+Despliegue:
+
+```text
+Fases 0-4 (desarrollo)   livekit-server --dev en la máquina local.
+                         Sin cuenta, sin costo, sin internet de por medio.
+
+Producción               el mismo binario en un VPS con dominio, TLS
+                         y puertos UDP abiertos para media WebRTC.
+```
+
+El único techo de terceros que queda es el TTS:
+
+| Servicio | Límite | Cómo escala |
 |---|---|---|
 | Fish Audio | **5 solicitudes concurrentes** con < $100 consumidos | 15 con $100, 50 con $1.000, luego Enterprise |
-| LiveKit **Cloud** Build | **5 sesiones de agente concurrentes** | Planes pagos, o **desaparece self-hosteando** |
 
-**LiveKit no impone ningún techo.** `livekit/livekit` es Apache-2.0, se self-hostea, y no tiene fee por minuto ni tope de participantes. El límite de 5 es del plan Build de LiveKit **Cloud**. Migrar de Cloud a self-hosted es cambiar `LIVEKIT_URL`: el código del agente no se toca. Se desarrolla contra Cloud y se migra cuando duela.
+**Una solicitud concurrente no es una conversación.** El slot se ocupa solo mientras se sintetiza audio, no durante toda la sesión. Con turnos de agente de ~5 s en conversaciones de ~4 min, el ciclo de trabajo ronda el 30%: 5 slots sostienen del orden de **15 conversaciones Live simultáneas**, y muchas más si el guión está cacheado. Al superarse, la API devuelve 429 y el router encola: se traduce en unos cientos de milisegundos de espera, no en un error visible.
 
-El techo de Fish es un **problema de arranque en frío**, no un tope final: sus tramos suben con el consumo acumulado. Aun así, depender de un solo proveedor viola el §34 del contexto maestro.
+El valor real del ciclo de trabajo depende de si el plugin usa requests por frase o un WebSocket persistente por sesión. **Se mide en la Fase 4** y se elige el modo que maximice conversaciones por slot.
+
+Aun así, depender de un solo proveedor de TTS viola el §34 del contexto maestro. De ahí el pool.
 
 ### Estrategia de concurrencia en tres capas
 
@@ -272,7 +289,7 @@ Obligatorios antes de exponer cualquier cosa al público:
 - Tope de duración de sesión del lado del servidor: **4 minutos**, el agente cierra el room.
 - Rate limit por IP en el endpoint de token.
 - Contador global diario en Supabase con **kill-switch** que degrada a texto al superarse.
-- Alerta al 80% del cupo gratuito de LiveKit.
+- Alerta al 80% del presupuesto mensual de TTS y de la capacidad del servidor LiveKit.
 - Instrumentación de tokens, bytes sintetizados y minutos por sesión desde la primera fase con LLM.
 
 ---
@@ -351,7 +368,7 @@ Cada fase tiene un gate. **No se avanza si la anterior está rota** (regla 3 del
 | Fase | Contenido | Gate |
 |---|---|---|
 | 0 | Esqueleto, `.env.example`, config, test de frontera `brain/` ↔ `voice/` | El test de frontera corre y falla si se viola |
-| 1 | LiveKit Cloud, navegador ↔ agente, prompt fijo | Se escucha audio de ida y vuelta |
+| 1 | `livekit-server --dev` local, navegador ↔ agente, prompt fijo | Se escucha audio de ida y vuelta |
 | 2 | Groq STT | Transcribe español correctamente |
 | 3 | Groq LLM + instrumentación de tokens | Conversación coherente, con costo medido |
 | 4 | Fish TTS, voz y acento rioplatense | Conversación completa con interrupción funcionando |
@@ -403,7 +420,7 @@ Se mantiene un **monolito modular**. La única división interna que importa hoy
 |---|---|---|
 | Fish `s2.1-pro-free` vence el 31/08/2026 | El TTS pasa de gratis a $15/1M bytes | El modelo sale de configuración; cambiar es una variable de entorno |
 | Techo de 5 concurrentes en Fish | La sexta conversación Live encola | Las tres capas del §9: cache, pool de proveedores y TTS propio |
-| Techo de 5 sesiones en LiveKit Cloud Build | Tope de conversaciones simultáneas | Self-hostear `livekit/livekit` (Apache-2.0). Es cambiar `LIVEKIT_URL` |
+| El VPS de LiveKit se satura | Caen las conversaciones en curso | Dimensionar por CPU y ancho de banda medidos, no estimados. Escalar el VPS |
 | No conseguir un TTS comercial con acento rioplatense | El pool queda con un solo proveedor y vuelve el techo | Investigación delegada; si falla, negociar tramo alto con Fish |
 | Acento neutro en español | La demo suena extranjera y pierde cercanía | Gate explícito en la Fase 4 |
 | RLS no protege bajo service_role | Un error de código expone datos entre tenants | Capa única de repositorios más test que lo bloquea |
