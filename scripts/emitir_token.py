@@ -4,7 +4,12 @@ En produccion esto vive en un endpoint del backend que ademas valida el
 tenant y aplica los limites. Para desarrollo alcanza con este script.
 
 Uso:
-    uv run python scripts/token.py sala-demo visitante
+    uv run python scripts/emitir_token.py sala-demo visitante
+
+NO renombrar este archivo a `token.py`. Al correrlo, Python pone `scripts/`
+al principio de sys.path, y un `token.py` ahi le hace sombra al modulo
+`token` de la stdlib que importa `tokenize`. El sintoma es un error de
+import circular en `logging` que no tiene nada que ver con la causa real.
 """
 
 from __future__ import annotations

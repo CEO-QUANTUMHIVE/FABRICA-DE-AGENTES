@@ -6,7 +6,7 @@
 
 **Architecture:** Monolito modular en Python con dos paquetes de frontera dura: `voice/` (LiveKit, proveedores, sesión) y `brain/` (prompt y, más adelante, contexto y tools). `brain/` tiene prohibido importar `livekit`, y un test lo hace cumplir. En estas fases el cerebro es un prompt fijo: no hay base de datos ni multi-tenant todavía.
 
-**Tech Stack:** Python 3.13 · `uv` · `livekit-agents ~1.6` · `livekit-plugins-groq` · `livekit-plugins-fishaudio` · `livekit-plugins-silero` · `livekit-server 1.13.5` (binario Windows) · pytest
+**Tech Stack:** Python 3.14 (resuelto por `uv`) · `uv` · `livekit-agents ~1.6` · `livekit-plugins-groq` · `livekit-plugins-fishaudio` · `livekit-plugins-silero` · `livekit-server 1.13.5` (binario Windows) · pytest
 
 ---
 
@@ -20,7 +20,7 @@ Cubre las **Fases 0 a 4** del spec `docs/superpowers/specs/2026-08-08-motor-voz-
 
 | Herramienta | Versión presente |
 |---|---|
-| Python | 3.13.13 |
+| Python | 3.13.13 en el sistema; `uv` resuelve 3.14.0 para el proyecto |
 | uv | 0.11.8 |
 | Node / npm | 24.15.0 / 11.12.1 |
 | Docker | no instalado (no hace falta) |
@@ -166,7 +166,7 @@ uv sync
 
 Esperado: crea `.venv/` e instala livekit-agents con los tres plugins.
 
-Si falla por Python 3.13, crear el entorno con 3.12 y reintentar:
+Si falla por la version de Python, crear el entorno con 3.12 y reintentar:
 
 ```bash
 uv venv --python 3.12
@@ -499,7 +499,7 @@ git commit -m "feat(fase0): config validada con defaults del spec"
 ### Task 4: Servidor LiveKit local y emisión de tokens
 
 **Files:**
-- Create: `scripts/token.py`
+- Create: `scripts/emitir_token.py`
 - Create: `scripts/arrancar-livekit.md`
 - Modify: `.env` (local, no se commitea)
 
@@ -550,7 +550,7 @@ LIVEKIT_API_SECRET=secret
 
 - [ ] **Step 4: Escribir el script que emite tokens**
 
-`scripts/token.py`:
+`scripts/emitir_token.py`:
 
 ```python
 """Emite un token de acceso a una sala de LiveKit.
@@ -559,7 +559,7 @@ En produccion esto vive en un endpoint del backend que ademas valida el
 tenant y aplica los limites. Para desarrollo alcanza con este script.
 
 Uso:
-    uv run python scripts/token.py sala-demo visitante
+    uv run python scripts/emitir_token.py sala-demo visitante
 """
 
 from __future__ import annotations
@@ -592,7 +592,7 @@ if __name__ == "__main__":
 - [ ] **Step 5: Verificar que emite un token**
 
 ```bash
-uv run python scripts/token.py sala-demo visitante
+uv run python scripts/emitir_token.py sala-demo visitante
 ```
 
 Esperado: imprime un JWT largo que empieza con `eyJ`.
@@ -627,7 +627,7 @@ abiertos para el media WebRTC.
 - [ ] **Step 7: Commit**
 
 ```bash
-git add scripts/token.py scripts/arrancar-livekit.md
+git add scripts/emitir_token.py scripts/arrancar-livekit.md
 git commit -m "feat(fase1): livekit-server local y emision de tokens"
 ```
 
@@ -1444,7 +1444,7 @@ git commit -m "feat(fase4): agente completo cableando brain/ con los proveedores
   </head>
   <body>
     <h1>Motor de Voz — Demo</h1>
-    <p>Pegá el token generado con <code>uv run python scripts/token.py</code>:</p>
+    <p>Pegá el token generado con <code>uv run python scripts/emitir_token.py</code>:</p>
     <input id="token" placeholder="eyJ..." />
     <p>
       <button id="conectar">Conectar</button>
@@ -1546,7 +1546,7 @@ cd frontend/demo && npm run dev
 - [ ] **Step 2: Generar un token y conectarse**
 
 ```bash
-uv run python scripts/token.py sala-demo visitante
+uv run python scripts/emitir_token.py sala-demo visitante
 ```
 
 Copiar el JWT, abrir `http://localhost:5173`, pegarlo y apretar Conectar. Dar permiso de micrófono.
@@ -1587,7 +1587,7 @@ Con las fases 0 a 4 cerradas, el motor habla con un prompt fijo. El plan siguien
 
 | Riesgo | Señal temprana | Qué hacer |
 |---|---|---|
-| Python 3.13 sin soporte en algún plugin | `uv sync` falla al resolver | `uv venv --python 3.12` y reintentar |
+| La version de Python que resuelva `uv` sin soporte en algun plugin | `uv sync` falla al resolver | `uv venv --python 3.12` y reintentar |
 | Nombres de la API de `livekit.agents` cambiados en 1.6.x | El import de `agente.py` falla | Listar `dir(livekit.agents)` y ajustar; la estructura del ejemplo oficial `voice_agents/basic_agent.py` es la referencia |
 | `silero.VAD.load()` tarda en arrancar | El worker demora unos segundos al primer arranque | Es esperado: descarga el modelo una vez. Si molesta, moverlo a un hook de prewarm |
 | Acento neutro en el TTS | Se nota en el paso 6 de la Task 8 | Clonar voz con `hola_es.wav` y configurar `FISH_VOICE_ID` |
