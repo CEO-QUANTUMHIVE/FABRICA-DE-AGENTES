@@ -1,0 +1,63 @@
+# ─────────────────────────────────────────────────────────────
+# SECRETOS — el repositorio es PÚBLICO. Nada de esto sube nunca.
+# ─────────────────────────────────────────────────────────────
+apis/
+*.key
+*.pem
+.env
+.env.*
+!.env.example
+secrets/
+credentials/
+*api*.txt
+*token*.txt
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+dist/
+build/
+
+# Node / frontend
+node_modules/
+.next/
+.turbo/
+frontend/**/dist/
+
+# Audio generado y cache
+*.wav
+*.mp3
+*.ogg
+*.opus
+cache/
+audio_cache/
+!tests/fixtures/**/*.wav
+
+# Modelos y pesos
+*.pt
+*.pth
+*.safetensors
+*.onnx
+models/
+
+# Sistema operativo y editores
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/
+*.swp
+
+# Logs y temporales
+*.log
+logs/
+tmp/
+.coverage
+htmlcov/
