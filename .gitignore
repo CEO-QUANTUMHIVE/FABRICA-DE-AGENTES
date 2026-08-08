@@ -69,3 +69,4 @@ logs/
 tmp/
 .coverage
 htmlcov/
+token.txt
