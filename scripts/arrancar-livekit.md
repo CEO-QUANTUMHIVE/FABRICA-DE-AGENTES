@@ -15,6 +15,12 @@
 
        cd frontend/demo && npm run dev
 
+4. Generar un token para entrar a la sala desde el navegador:
+
+       uv run python scripts/emitir_token.py sala-demo visitante
+
+   Copiar el JWT que imprime y pegarlo en la demo.
+
 El servidor en modo --dev no persiste nada y no usa TLS. Para produccion
 va el mismo binario en un VPS con dominio, certificado y puertos UDP
 abiertos para el media WebRTC.
