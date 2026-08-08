@@ -21,6 +21,18 @@ OBLIGATORIAS = (
 )
 
 
+VOCABULARIO_DE_MARCA = (
+    "Conversacion en espanol rioplatense sobre QuantumHive: paginas web "
+    "inteligentes, empleado virtual, catalogo vivo, avatar y clonacion de voz."
+)
+"""Pista de vocabulario para Whisper.
+
+Sin esto, Groq transcribe la marca como "quantum high". Verificado el
+2026-08-08 con una grabacion real de 60 segundos. Whisper usa este texto
+como contexto previo y corrige los nombres propios.
+"""
+
+
 class ConfigInvalida(RuntimeError):
     """El entorno no tiene lo minimo para arrancar el motor."""
 
@@ -38,6 +50,7 @@ class Config:
     fish_latency_mode: str
     fish_voice_id: str
     idioma: str
+    stt_prompt: str
     max_session_seconds: int
 
 
@@ -60,6 +73,7 @@ def cargar(entorno: dict[str, str] | None = None) -> Config:
         livekit_api_secret=e["LIVEKIT_API_SECRET"].strip(),
         stt_model=e.get("GROQ_STT_MODEL", "whisper-large-v3-turbo"),
         llm_model=e.get("GROQ_LLM_MODEL", "openai/gpt-oss-20b"),
+        stt_prompt=e.get("STT_PROMPT", VOCABULARIO_DE_MARCA),
         fish_model=e.get("FISH_MODEL", "s2.1-pro"),
         fish_latency_mode=e.get("FISH_LATENCY_MODE", "low"),
         fish_voice_id=e.get("FISH_VOICE_ID", ""),

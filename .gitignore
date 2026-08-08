@@ -40,7 +40,13 @@ frontend/**/dist/
 *.opus
 cache/
 audio_cache/
-!tests/fixtures/**/*.wav
+
+# Las muestras de voz NO se versionan. El repositorio es publico y un wav
+# limpio de la voz de una persona alcanza para clonarla. Cada quien deja
+# su propia grabacion local en tests/fixtures/; los smoke tests la saltean
+# si no esta. Ver §17 y §19 del contexto maestro: la clonacion de voz
+# requiere autorizacion explicita.
+tests/fixtures/*.wav
 
 # Modelos y pesos
 *.pt

@@ -37,7 +37,12 @@ def cargar_wav(ruta: pathlib.Path) -> rtc.AudioFrame:
 @pytest.mark.smoke
 @pytest.mark.asyncio
 async def test_transcribe_espanol_rioplatense():
-    assert FIXTURE.exists(), f"Falta la grabacion de prueba en {FIXTURE}"
+    if not FIXTURE.exists():
+        pytest.skip(
+            f"Falta la grabacion local en {FIXTURE}. No se versiona: un wav "
+            "limpio de una voz alcanza para clonarla y el repo es publico. "
+            "Graba 10-15 segundos en espanol y dejala ahi."
+        )
 
     motor = stt.crear(cargar())
     evento = await motor.recognize(cargar_wav(FIXTURE))
@@ -45,5 +50,18 @@ async def test_transcribe_espanol_rioplatense():
     print(f"\nTranscripcion: {texto}\n")
 
     assert texto.strip(), "Groq devolvio texto vacio"
-    assert "sabado" in texto or "sábado" in texto, f"No reconocio 'sabado' en: {texto}"
-    assert "reservo" in texto, f"No reconocio 'reservo' en: {texto}"
+
+    # La grabacion real es el pitch de QuantumHive, en voz de Sergio.
+    assert "negocio" in texto, f"No reconocio 'negocio' en: {texto}"
+    assert "avatar" in texto, f"No reconocio 'avatar' en: {texto}"
+
+    # Voseo rioplatense: si esto falla, el idioma quedo mal configurado.
+    assert any(m in texto for m in ("acá", "aca", "vos", "unite")), (
+        f"No aparece ninguna marca de voseo rioplatense en: {texto}"
+    )
+
+    # Sin la pista de vocabulario, Whisper escribe "quantum high".
+    normalizado = texto.replace(" ", "")
+    assert "quantumhive" in normalizado, (
+        f"La marca se transcribio mal. Revisar STT_PROMPT. Texto: {texto}"
+    )

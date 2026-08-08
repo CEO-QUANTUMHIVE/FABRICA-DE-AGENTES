@@ -26,6 +26,17 @@ def test_opciones_stt_pasan_la_clave():
     assert opciones["api_key"] == "gsk_falsa"
 
 
+def test_opciones_stt_incluyen_el_vocabulario_de_marca():
+    """Sin la pista, Whisper transcribe la marca como 'quantum high'."""
+    opciones = stt.opciones(cargar(ENTORNO))
+    assert "QuantumHive" in opciones["prompt"]
+
+
+def test_opciones_stt_omiten_el_prompt_si_esta_vacio():
+    opciones = stt.opciones(cargar(ENTORNO | {"STT_PROMPT": "   "}))
+    assert "prompt" not in opciones
+
+
 def test_crear_stt_devuelve_un_stt_de_groq():
     from livekit.plugins import groq
 
