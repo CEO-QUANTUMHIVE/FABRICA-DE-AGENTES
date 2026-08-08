@@ -11,6 +11,8 @@ secrets/
 credentials/
 *api*.txt
 *token*.txt
+# binario de livekit-server.exe descargado a mano, no se versiona
+scripts/livekit/
 
 # Python
 __pycache__/
