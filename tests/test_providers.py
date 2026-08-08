@@ -30,3 +30,23 @@ def test_crear_stt_devuelve_un_stt_de_groq():
     from livekit.plugins import groq
 
     assert isinstance(stt.crear(cargar(ENTORNO)), groq.STT)
+
+
+from motor_voz.voice.providers import llm
+
+
+def test_opciones_llm_usan_gpt_oss_y_no_el_default_del_plugin():
+    """El default del plugin es llama-3.3-70b-versatile."""
+    opciones = llm.opciones(cargar(ENTORNO))
+    assert opciones["model"] == "openai/gpt-oss-20b"
+
+
+def test_opciones_llm_pasan_la_clave():
+    opciones = llm.opciones(cargar(ENTORNO))
+    assert opciones["api_key"] == "gsk_falsa"
+
+
+def test_crear_llm_devuelve_un_llm_de_groq():
+    from livekit.plugins import groq
+
+    assert isinstance(llm.crear(cargar(ENTORNO)), groq.LLM)
