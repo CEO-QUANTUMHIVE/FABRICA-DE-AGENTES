@@ -4,22 +4,34 @@ Leé esto antes de abrir un solo archivo.
 
 ---
 
-## 1. Consultá el grafo ANTES de releer el repo
+## 1. REGLA DURA: el grafo primero, siempre
 
 Hay un grafo de conocimiento en `graphify-out/` (local, no versionado) que
-se **regenera solo en cada commit**. Para "¿dónde está X?", "¿cómo se
-conecta Y con Z?" o cualquier pregunta de arquitectura, preguntale al grafo
-antes de abrir archivos sueltos.
+se **regenera solo en cada commit**, así que nunca está desactualizado.
+
+**Antes de buscar cualquier cosa en este repo, preguntale al grafo.** No es
+una sugerencia: es el orden de trabajo. Abrir archivos a mano para
+orientarte quema tokens, es lento y te hace leer cosas que no necesitás.
+
+Aplica **siempre** que quieras saber:
+
+- dónde está algo → `graphify query "..."`
+- qué hace algo → `graphify explain "nombre"`
+- cómo se conectan dos cosas → `graphify path "A" "B"`
+- qué se rompe si toco algo → `graphify affected "Config"`
 
 ```bash
 graphify query "como se elige el motor segun el plan" --budget 800
 graphify explain "opciones_gemini"
 graphify path "AgentSession" "normalizar"
-graphify affected "Config"          # qué se rompe si toco esto
+graphify affected "Config"
 ```
 
-Releer el repo entero es el último recurso, no el primero. Si
-`graphify-out/` no existe, reconstruilo con `graphify update .`
+**Grep y leer archivos vienen después del grafo, no antes.** El grafo te
+dice dónde mirar; recién ahí abrís el archivo puntual. Releer el repo
+entero es el último recurso.
+
+Si `graphify-out/` no existe, reconstruilo: `graphify update .`
 
 ---
 
