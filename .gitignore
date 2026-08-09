@@ -47,6 +47,7 @@ audio_cache/
 # si no esta. Ver §17 y §19 del contexto maestro: la clonacion de voz
 # requiere autorizacion explicita.
 tests/fixtures/*.wav
+clon de sergio/
 
 # Modelos y pesos
 *.pt
