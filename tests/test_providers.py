@@ -80,12 +80,12 @@ def test_opciones_tts_usan_el_modelo_del_spec():
 def test_opciones_tts_aceleran_el_habla():
     """A 1.0 el modelo habla pausado entre palabras y suena robotico."""
     opciones = tts.opciones(cargar(ENTORNO))
-    assert opciones["speed"] == 1.12
+    assert opciones["speed"] == 1.25
 
 
 def test_opciones_tts_pasan_la_temperatura():
     opciones = tts.opciones(cargar(ENTORNO))
-    assert opciones["temperature"] == 0.8
+    assert opciones["temperature"] == 1.0
 
 
 def test_el_ritmo_y_la_expresividad_se_pueden_ajustar_por_entorno():

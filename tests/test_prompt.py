@@ -18,6 +18,13 @@ def test_el_prompt_prohibe_inventar_datos():
     assert "invent" in texto
 
 
+def test_el_prompt_prohibe_lo_que_el_tts_pronuncia_mal():
+    """Fish leyo '24/7' como '24 septimo'. La voz lee literal lo que se escribe."""
+    texto = construir()
+    assert "24/7" in texto, "Tiene que nombrar el caso concreto, no dar una regla vaga"
+    assert "veinticuatro horas" in texto
+
+
 def test_el_prompt_pide_energia():
     """Sin esto el LLM escribe frases planas y Fish las dice planas."""
     texto = construir().lower()
