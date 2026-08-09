@@ -102,5 +102,6 @@ No las vuelvas a romper. Cada una está cubierta por un test.
 | Entender el diseño | `docs/superpowers/specs/2026-08-08-motor-voz-design.md` |
 | Escribir la personalidad de un agente | `docs/guia-de-prompts.md` |
 | Clonar una voz | `docs/voces/registro-de-consentimiento.md` |
+| Instalar el agente en la web de un cliente | `docs/instalar-el-agente-en-una-landing.md` |
 | Levantar todo en local | `.\arrancar.ps1` |
 | Ver el mapa del código | `graphify query "..."` |
