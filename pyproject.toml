@@ -12,6 +12,7 @@ dependencies = [
 [dependency-groups]
 dev = [
     "pytest>=8.0",
+    "pytest-aiohttp>=1.1.1",
     "pytest-asyncio>=0.24",
 ]
 
@@ -25,6 +26,7 @@ packages = ["src/motor_voz"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+asyncio_mode = "auto"
 markers = [
     "smoke: llama APIs reales y consume creditos. No corre por defecto.",
 ]

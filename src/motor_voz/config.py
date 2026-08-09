@@ -54,6 +54,9 @@ class Config:
     idioma: str
     stt_prompt: str
     max_session_seconds: int
+    max_sesiones_por_ip_hora: int
+    max_sesiones_por_dia: int
+    api_puerto: int
     # Plan comercial: que motor de conversacion usa este tenant.
     motor: str
     # Plan medio - Gemini Live. Con gcp_project va por Vertex AI y consume
@@ -101,6 +104,9 @@ def cargar(entorno: dict[str, str] | None = None) -> Config:
         fish_voice_id=e.get("FISH_VOICE_ID", ""),
         idioma=e.get("IDIOMA", "es"),
         max_session_seconds=int(e.get("MAX_SESSION_SECONDS", "240")),
+        max_sesiones_por_ip_hora=int(e.get("MAX_SESSIONS_PER_IP_HOUR", "3")),
+        max_sesiones_por_dia=int(e.get("MAX_SESSIONS_PER_DAY", "200")),
+        api_puerto=int(e.get("API_PUERTO", "8080")),
         motor=e.get("MOTOR", "pipeline").strip().lower(),
         gemini_model=e.get("GEMINI_MODEL", "gemini-3.1-flash-live-preview"),
         gemini_voice=e.get("GEMINI_VOICE", "Puck"),

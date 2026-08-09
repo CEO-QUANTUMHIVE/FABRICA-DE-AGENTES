@@ -2,19 +2,14 @@
 #
 #   .\arrancar.ps1
 #
-# Abre tres ventanas (servidor, agente, frontend), genera el token y
-# te deja todo listo. Para frenar todo: cerra las tres ventanas.
+# Abre cuatro ventanas y el navegador. Para frenar todo: cerra las ventanas.
 #
 # NO usar $ErrorActionPreference = "Stop" en este script. PowerShell 5.1
 # convierte el stderr de los comandos nativos en errores, y tanto uv como
-# npm escriben avisos ahi aunque terminen bien. Con "Stop" el script se
-# corta antes de generar el token.
+# npm escriben avisos ahi aunque terminen bien.
 
 $raiz = $PSScriptRoot
 Set-Location $raiz
-
-# Silencia el aviso de PyJWT por el secreto corto de --dev, que ensucia
-# la salida y confunde la captura del token.
 $env:PYTHONWARNINGS = "ignore"
 
 function Fallar($mensaje) {
@@ -24,15 +19,19 @@ function Fallar($mensaje) {
     exit 1
 }
 
+function Ventana($titulo, $comando, $carpeta) {
+    Start-Process powershell -ArgumentList @(
+        "-NoExit", "-Command",
+        "`$host.UI.RawUI.WindowTitle='$titulo'; Set-Location '$carpeta'; $comando"
+    )
+}
+
 Write-Host ""
 Write-Host "  Motor de Voz de QuantumHive" -ForegroundColor Cyan
 Write-Host "  ---------------------------"
 Write-Host ""
 
-# --- Chequeos previos, para fallar temprano y con un mensaje claro ---
-
-$servidor = Join-Path $raiz "scripts\livekit\livekit-server.exe"
-if (-not (Test-Path $servidor)) {
+if (-not (Test-Path (Join-Path $raiz "scripts\livekit\livekit-server.exe"))) {
     Fallar "no esta livekit-server.exe en scripts\livekit\."
 }
 if (-not (Test-Path (Join-Path $raiz ".env"))) {
@@ -45,71 +44,34 @@ if (-not (Test-Path (Join-Path $raiz "frontend\demo\node_modules"))) {
     Pop-Location
 }
 
-# --- Token primero: si esto falla, no tiene sentido levantar nada ---
-
-Write-Host "  Generando token..." -NoNewline
-$salida = uv run python scripts/emitir_token.py sala-demo visitante
-$token = $salida | Where-Object { $_ -is [string] -and $_.StartsWith("eyJ") } | Select-Object -First 1
-
-if (-not $token) {
-    Write-Host " FALLO" -ForegroundColor Red
-    Write-Host ""
-    Write-Host "  Salida completa del comando:" -ForegroundColor Yellow
-    $salida | ForEach-Object { Write-Host "    $_" }
-    Write-Host ""
-    Fallar "no se pudo generar el token. Revisa LIVEKIT_API_KEY y LIVEKIT_API_SECRET en .env."
-}
-
-# Se guarda en archivo ademas del portapapeles, por si el portapapeles falla.
-$token | Out-File -FilePath (Join-Path $raiz "token.txt") -Encoding utf8
-try { Set-Clipboard -Value $token } catch { }
-Write-Host " OK" -ForegroundColor Green
-
-# --- 1. Servidor de medios ---
-
-Write-Host "  [1/3] Servidor LiveKit..." -NoNewline
-Start-Process powershell -ArgumentList @(
-    "-NoExit", "-Command",
-    "`$host.UI.RawUI.WindowTitle='LiveKit'; Set-Location '$raiz'; .\scripts\livekit\livekit-server.exe --dev"
-)
+Write-Host "  [1/4] Servidor LiveKit..." -NoNewline
+Ventana "LiveKit" ".\scripts\livekit\livekit-server.exe --dev" $raiz
 Start-Sleep -Seconds 3
 Write-Host " ws://localhost:7880" -ForegroundColor Green
 
-# --- 2. Agente ---
+Write-Host "  [2/4] API de tokens..." -NoNewline
+Ventana "API de tokens" "uv run python -m motor_voz.api.servidor" $raiz
+Start-Sleep -Seconds 2
+Write-Host " http://localhost:8080" -ForegroundColor Green
 
-Write-Host "  [2/3] Agente..." -NoNewline
-Start-Process powershell -ArgumentList @(
-    "-NoExit", "-Command",
-    "`$host.UI.RawUI.WindowTitle='AGENTE - los errores salen aca'; Set-Location '$raiz'; uv run python -m motor_voz.voice.agente dev"
-)
+Write-Host "  [3/4] Agente..." -NoNewline
+Ventana "AGENTE - los errores salen aca" "uv run python -m motor_voz.voice.agente dev" $raiz
 Write-Host " arrancando (la primera vez baja el modelo de VAD y tarda)" -ForegroundColor Green
 
-# --- 3. Frontend ---
-
-Write-Host "  [3/3] Frontend..." -NoNewline
-Start-Process powershell -ArgumentList @(
-    "-NoExit", "-Command",
-    "`$host.UI.RawUI.WindowTitle='Frontend'; Set-Location '$raiz\frontend\demo'; npm run dev"
-)
+Write-Host "  [4/4] Frontend..." -NoNewline
+Ventana "Frontend" "npm run dev" (Join-Path $raiz "frontend\demo")
 Start-Sleep -Seconds 4
 Write-Host " http://localhost:5173" -ForegroundColor Green
 
-# --- Cierre ---
-
 Write-Host ""
-Write-Host "  TU TOKEN (ya copiado al portapapeles):" -ForegroundColor Cyan
+Write-Host "  LISTO. Ya no hace falta copiar ningun token:" -ForegroundColor Cyan
+Write-Host "  la pagina se lo pide sola a la API."
 Write-Host ""
-Write-Host "  $token" -ForegroundColor White
-Write-Host ""
-Write-Host "  Tambien quedo guardado en token.txt" -ForegroundColor DarkGray
-Write-Host ""
-Write-Host "  Ahora:" -ForegroundColor Cyan
-Write-Host "    1. Abri  http://localhost:5173"
-Write-Host "    2. Pega el token con Ctrl+V"
-Write-Host "    3. Conectar, y dale permiso al microfono"
+Write-Host "  1. Elegi el nivel de realismo (Basico / Natural / Humano)"
+Write-Host "  2. Toca Hablar y dale permiso al microfono"
+Write-Host "  3. Cambia de nivel en vivo para comparar los tres planes"
 Write-Host ""
 Write-Host "  Si algo falla, mira la ventana AGENTE." -ForegroundColor Yellow
-Write-Host "  Para frenar todo, cerra las tres ventanas."
 Write-Host ""
 
 Start-Process "http://localhost:5173"

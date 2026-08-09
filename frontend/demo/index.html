@@ -2,25 +2,57 @@
 <html lang="es">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Motor de Voz — Demo</title>
-    <style>
-      body { font-family: system-ui, sans-serif; max-width: 32rem; margin: 3rem auto; padding: 0 1rem; }
-      button { font-size: 1rem; padding: 0.6rem 1.2rem; margin-right: 0.5rem; }
-      #estado { margin-top: 1.5rem; font-size: 1.1rem; }
-      input { width: 100%; padding: 0.5rem; font-family: monospace; font-size: 0.8rem; }
-    </style>
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>QuantumHive — Hablá con el agente</title>
+    <link rel="stylesheet" href="./estilo.css" />
   </head>
   <body>
-    <h1>Motor de Voz — Demo</h1>
-    <p>Pegá el token generado con <code>uv run python scripts/emitir_token.py</code>:</p>
-    <input id="token" placeholder="eyJ..." />
-    <p>
-      <button id="conectar">Conectar</button>
-      <button id="silenciar" disabled>Silenciar micrófono</button>
-      <button id="cortar" disabled>Finalizar</button>
-    </p>
-    <div id="estado">desconectado</div>
+    <!-- Panel desplegable: baja desde arriba con la conversacion -->
+    <section id="panel" class="panel" aria-live="polite">
+      <div class="panel__interior">
+        <header class="panel__cabecera">
+          <span class="panel__titulo">Conversación</span>
+          <button id="cerrar-panel" class="panel__cerrar" aria-label="Cerrar">✕</button>
+        </header>
+        <div id="transcripcion" class="transcripcion"></div>
+      </div>
+    </section>
+
+    <button id="alternar-panel" class="lengueta" aria-expanded="false">
+      <span id="lengueta-texto">Ver conversación</span>
+      <span class="lengueta__flecha">▾</span>
+    </button>
+
+    <main class="escenario">
+      <h1 class="marca">QuantumHive</h1>
+      <p class="bajada">Le damos vida a tu negocio. Probalo hablando.</p>
+
+      <!-- Orbe: es el cuerpo visual del agente mientras no hay avatar -->
+      <div id="orbe" class="orbe" data-estado="desconectado">
+        <div class="orbe__nucleo"></div>
+        <div class="orbe__anillo"></div>
+      </div>
+      <p id="estado" class="estado">Elegí un nivel y tocá Hablar</p>
+
+      <!-- Selector de realismo: los tres planes, en vivo -->
+      <div class="niveles">
+        <div class="niveles__encabezado">
+          <span class="niveles__titulo">Nivel de realismo</span>
+          <span id="nivel-plan" class="niveles__plan"></span>
+        </div>
+        <div id="selector" class="selector" role="radiogroup" aria-label="Nivel de realismo"></div>
+        <p id="nivel-descripcion" class="niveles__descripcion"></p>
+      </div>
+
+      <div class="acciones">
+        <button id="hablar" class="boton boton--principal">Hablar</button>
+        <button id="silenciar" class="boton" disabled>Silenciar</button>
+        <button id="cortar" class="boton boton--fin" disabled>Terminar</button>
+      </div>
+
+      <p id="aviso" class="aviso" hidden></p>
+    </main>
+
     <script type="module" src="./main.js"></script>
   </body>
 </html>

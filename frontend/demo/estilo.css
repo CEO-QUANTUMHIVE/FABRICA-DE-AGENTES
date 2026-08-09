@@ -1,0 +1,248 @@
+/* Demo del motor de voz.
+   Todo en unidades relativas y clamp(): el 90% del trafico va a ser movil,
+   y tiene que verse igual en un 360x560 que en un 390x844. Nada de
+   posiciones fijas que se superpongan. */
+
+:root {
+  --fondo: #07070c;
+  --fondo-panel: #0e0e18;
+  --borde: #24243a;
+  --texto: #e8e8f0;
+  --tenue: #8a8aa0;
+  --acento: #6ee7ff;
+  --acento-2: #a78bfa;
+  --premium: #fbbf24;
+  --radio: 1rem;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  min-height: 100%;
+  background: var(--fondo);
+  color: var(--texto);
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  overflow-x: hidden;
+}
+
+body {
+  background-image:
+    radial-gradient(60vmax 60vmax at 50% -10%, rgba(110, 231, 255, .10), transparent 70%),
+    radial-gradient(50vmax 50vmax at 80% 110%, rgba(167, 139, 250, .10), transparent 70%);
+}
+
+/* ---------- Panel desplegable ---------- */
+
+.panel {
+  position: fixed;
+  inset: 0 0 auto 0;
+  z-index: 20;
+  max-height: min(60vh, 30rem);
+  transform: translateY(-100%);
+  transition: transform .32s cubic-bezier(.4, 0, .2, 1);
+  background: var(--fondo-panel);
+  border-bottom: 1px solid var(--borde);
+}
+.panel[data-abierto="si"] { transform: translateY(0); }
+
+.panel__interior {
+  display: flex;
+  flex-direction: column;
+  max-height: min(60vh, 30rem);
+  max-width: 46rem;
+  margin: 0 auto;
+  padding: clamp(.75rem, 3vw, 1.25rem);
+}
+
+.panel__cabecera {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: .5rem;
+}
+.panel__titulo { font-size: .8rem; letter-spacing: .1em; text-transform: uppercase; color: var(--tenue); }
+.panel__cerrar {
+  background: none; border: 0; color: var(--tenue);
+  font-size: 1.1rem; cursor: pointer; padding: .25rem .5rem;
+}
+.panel__cerrar:hover { color: var(--texto); }
+
+.transcripcion {
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: .6rem;
+  padding-right: .25rem;
+}
+.turno {
+  max-width: 85%;
+  padding: .55rem .85rem;
+  border-radius: .85rem;
+  font-size: clamp(.85rem, 2.6vw, .95rem);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.turno--agente { align-self: flex-start; background: #171728; border: 1px solid var(--borde); }
+.turno--vos    { align-self: flex-end;   background: #1c2b33; border: 1px solid #2a4550; }
+.turno__quien  { display: block; font-size: .68rem; color: var(--tenue); margin-bottom: .15rem; }
+
+.lengueta {
+  position: fixed;
+  top: 0; left: 50%;
+  transform: translateX(-50%);
+  z-index: 21;
+  display: flex; align-items: center; gap: .4rem;
+  padding: .4rem 1rem .5rem;
+  border: 1px solid var(--borde); border-top: 0;
+  border-radius: 0 0 .8rem .8rem;
+  background: var(--fondo-panel);
+  color: var(--tenue);
+  font-size: .8rem;
+  cursor: pointer;
+}
+.lengueta:hover { color: var(--texto); }
+.lengueta__flecha { transition: transform .3s; }
+.panel[data-abierto="si"] ~ .lengueta .lengueta__flecha { transform: rotate(180deg); }
+
+/* ---------- Escenario ---------- */
+
+.escenario {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(.6rem, 2vh, 1.1rem);
+  padding: clamp(3rem, 9vh, 4.5rem) clamp(1rem, 5vw, 2rem) clamp(1.5rem, 5vh, 2.5rem);
+  text-align: center;
+}
+
+.marca {
+  margin: 0;
+  font-size: clamp(1.6rem, 7vw, 2.6rem);
+  font-weight: 700;
+  letter-spacing: -.02em;
+  background: linear-gradient(100deg, var(--acento), var(--acento-2));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.bajada { margin: 0; color: var(--tenue); font-size: clamp(.85rem, 3vw, 1rem); }
+
+/* ---------- Orbe ---------- */
+
+.orbe {
+  position: relative;
+  width: clamp(6.5rem, 26vw, 9rem);
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+  margin: clamp(.3rem, 2vh, 1rem) 0;
+}
+.orbe__nucleo {
+  width: 62%; height: 62%;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #fff, var(--acento) 45%, #1d4ed8 100%);
+  transition: transform .3s, box-shadow .3s, filter .3s;
+  filter: saturate(.4) brightness(.6);
+}
+.orbe__anillo {
+  position: absolute; inset: 0;
+  border-radius: 50%;
+  border: 2px solid rgba(110, 231, 255, .25);
+}
+
+.orbe[data-estado="escuchando"] .orbe__nucleo { filter: none; box-shadow: 0 0 3rem rgba(110,231,255,.5); animation: latir 1.8s ease-in-out infinite; }
+.orbe[data-estado="pensando"]   .orbe__nucleo { filter: none; background: radial-gradient(circle at 35% 30%, #fff, var(--acento-2) 45%, #6d28d9 100%); animation: latir .9s ease-in-out infinite; }
+.orbe[data-estado="hablando"]   .orbe__nucleo { filter: none; box-shadow: 0 0 4rem rgba(110,231,255,.7); animation: hablar .5s ease-in-out infinite; }
+.orbe[data-estado="conectando"] .orbe__anillo { animation: girar 1.1s linear infinite; border-top-color: var(--acento); }
+
+@keyframes latir  { 0%,100% { transform: scale(1); } 50% { transform: scale(1.07); } }
+@keyframes hablar { 0%,100% { transform: scale(1); } 50% { transform: scale(1.14); } }
+@keyframes girar  { to { transform: rotate(360deg); } }
+
+.estado { margin: 0; color: var(--tenue); font-size: clamp(.8rem, 2.8vw, .9rem); min-height: 1.3em; }
+
+/* ---------- Selector de niveles ---------- */
+
+.niveles {
+  width: min(100%, 30rem);
+  border: 1px solid var(--borde);
+  border-radius: var(--radio);
+  padding: clamp(.75rem, 3vw, 1rem);
+  background: rgba(14, 14, 24, .6);
+}
+.niveles__encabezado { display: flex; align-items: baseline; justify-content: space-between; gap: .5rem; margin-bottom: .6rem; }
+.niveles__titulo { font-size: .72rem; letter-spacing: .1em; text-transform: uppercase; color: var(--tenue); }
+.niveles__plan { font-size: .72rem; color: var(--acento); font-weight: 600; }
+
+.selector { display: grid; grid-template-columns: repeat(3, 1fr); gap: .4rem; }
+
+.nivel {
+  position: relative;
+  padding: .6rem .35rem .5rem;
+  border: 1px solid var(--borde);
+  border-radius: .7rem;
+  background: transparent;
+  color: var(--tenue);
+  cursor: pointer;
+  font-size: clamp(.72rem, 2.6vw, .85rem);
+  font-weight: 600;
+  transition: border-color .2s, color .2s, background .2s;
+}
+.nivel:hover { color: var(--texto); border-color: #38385a; }
+.nivel[aria-checked="true"] { color: #07070c; background: linear-gradient(100deg, var(--acento), var(--acento-2)); border-color: transparent; }
+.nivel[data-nivel="3"][aria-checked="true"] { background: linear-gradient(100deg, var(--premium), #f97316); }
+
+/* Barras que crecen: el "volumen" de humanidad */
+.nivel__barras { display: flex; gap: 2px; justify-content: center; margin-top: .35rem; height: .8rem; align-items: flex-end; }
+.nivel__barra { width: 3px; background: currentColor; opacity: .35; border-radius: 1px; }
+.nivel[aria-checked="true"] .nivel__barra { opacity: 1; }
+
+.niveles__descripcion { margin: .6rem 0 0; font-size: clamp(.75rem, 2.6vw, .82rem); color: var(--tenue); min-height: 2.4em; }
+
+/* ---------- Botones ---------- */
+
+.acciones { display: flex; flex-wrap: wrap; gap: .5rem; justify-content: center; width: min(100%, 30rem); }
+
+.boton {
+  flex: 1 1 8rem;
+  padding: .7rem 1.1rem;
+  border: 1px solid var(--borde);
+  border-radius: .7rem;
+  background: transparent;
+  color: var(--texto);
+  font-size: clamp(.85rem, 3vw, .95rem);
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity .2s, border-color .2s;
+}
+.boton:hover:not(:disabled) { border-color: var(--acento); }
+.boton:disabled { opacity: .35; cursor: not-allowed; }
+.boton--principal { flex-basis: 100%; background: linear-gradient(100deg, var(--acento), var(--acento-2)); color: #07070c; border-color: transparent; }
+.boton--fin { color: #fca5a5; }
+
+.aviso {
+  width: min(100%, 30rem);
+  margin: 0;
+  padding: .7rem .9rem;
+  border-radius: .7rem;
+  background: #2a1a1a;
+  border: 1px solid #5a2a2a;
+  color: #fca5a5;
+  font-size: .82rem;
+}
+
+/* Pantallas bajas: se achica el orbe antes que nada, para que no se corte
+   el selector ni los botones. Paso real: en un celular chico la portada
+   tapaba los controles. */
+@media (max-height: 640px) {
+  .orbe { width: clamp(4.5rem, 18vw, 6rem); margin: 0; }
+  .escenario { gap: .5rem; justify-content: flex-start; padding-top: 3.2rem; }
+  .bajada { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation: none !important; transition: none !important; }
+}

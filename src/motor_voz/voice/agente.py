@@ -6,6 +6,7 @@ proveedores y arranca. Todo lo que el agente sabe viene de brain/.
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 
 from livekit.agents import (
@@ -40,19 +41,35 @@ class Receptor(Agent):
         )
 
 
+def motor_de_la_sala(nombre: str, por_defecto: str) -> str:
+    """Extrae el motor del nombre de sala `demo-<motor>-<aleatorio>`.
+
+    Si el nombre no sigue ese formato — una sala creada a mano, por ejemplo —
+    se usa el motor de la configuracion.
+    """
+    partes = nombre.split("-")
+    if len(partes) >= 3 and partes[0] == "demo" and partes[1] in motores.MOTORES:
+        return partes[1]
+    return por_defecto
+
+
 server = AgentServer()
 
 
 @server.rtc_session()
 async def entrypoint(ctx: JobContext) -> None:
-    config = cargar()
-    ctx.log_context_fields = {"room": ctx.room.name}
+    # El motor viene en el nombre de la sala, que lo eligio el backend al
+    # emitir el token. Como el token restringe a que sala se puede entrar,
+    # el navegador no lo puede falsear: no puede pedir el plan premium por
+    # su cuenta.
+    config = dataclasses.replace(cargar(), motor=motor_de_la_sala(ctx.room.name, cargar().motor))
+    ctx.log_context_fields = {"room": ctx.room.name, "motor": config.motor}
 
     # Se imprime la config al arrancar cada sesion: sin esto no hay forma de
     # saber a simple vista si el worker esta corriendo el codigo nuevo o
     # quedo con el viejo porque no se reinicio.
     logger.info(
-        "sesion nueva | plan=%s motor=%s | voz=%s speed=%s temp=%s | normalizador=ACTIVO",
+        "sesion nueva | plan=%s motor=%s | voz=%s speed=%s temp=%s",
         motores.PLANES.get(config.motor, "?"),
         config.motor,
         config.fish_voice_id[:12] or "(default)",
