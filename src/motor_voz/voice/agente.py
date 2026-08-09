@@ -51,6 +51,17 @@ async def entrypoint(ctx: JobContext) -> None:
     config = cargar()
     ctx.log_context_fields = {"room": ctx.room.name}
 
+    # Se imprime la config al arrancar cada sesion: sin esto no hay forma de
+    # saber a simple vista si el worker esta corriendo el codigo nuevo o
+    # quedo con el viejo porque no se reinicio.
+    logger.info(
+        "sesion nueva | voz=%s modelo=%s speed=%s temp=%s | normalizador=ACTIVO",
+        config.fish_voice_id[:12] or "(default)",
+        config.fish_model,
+        config.fish_speed,
+        config.fish_temperature,
+    )
+
     session: AgentSession = AgentSession(
         stt=proveedor_stt.crear(config),
         llm=proveedor_llm.crear(config),
