@@ -57,9 +57,17 @@ class TestGemini:
         assert "GCP_PROJECT" in str(e.value)
         assert "GOOGLE_API_KEY" in str(e.value)
 
-    def test_la_region_tiene_un_default_razonable(self):
+    def test_usa_la_region_donde_vive_el_modelo(self):
+        """us-east4, la misma que usa Quantum Assistant. Vertex no sirve el
+        modelo Live en cualquier region."""
         o = motores.opciones_gemini(cargar(BASE | {"GCP_PROJECT": "p"}))
-        assert o["location"] == "us-central1"
+        assert o["location"] == "us-east4"
+
+    def test_usa_el_nombre_de_modelo_de_vertex(self):
+        """Vertex nombra los modelos distinto que ai.google.dev. Con el
+        nombre de la doc publica, la conexion falla."""
+        o = motores.opciones_gemini(cargar(BASE | {"GCP_PROJECT": "p"}))
+        assert o["model"] == "gemini-live-2.5-flash-native-audio"
 
 
 class TestOpenAI:

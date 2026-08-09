@@ -18,6 +18,17 @@ class LimiteAlcanzado(RuntimeError):
     """Se llego a un tope. El mensaje se le muestra al visitante."""
 
 
+# Desde la maquina propia no se limita nunca: el abuso viene de internet,
+# no de tu escritorio, y un limite que te frena mientras desarrollas es un
+# limite que vas a terminar sacando del todo.
+LOCALES = ("127.0.0.1", "::1", "localhost", "desconocida")
+PREFIJOS_PRIVADOS = ("192.168.", "10.", "172.16.", "172.17.", "172.18.", "172.19.")
+
+
+def es_local(ip: str) -> bool:
+    return ip in LOCALES or ip.startswith(PREFIJOS_PRIVADOS)
+
+
 class Limitador:
     def __init__(self, *, por_ip_hora: int, por_dia: int) -> None:
         self.por_ip_hora = por_ip_hora
@@ -27,6 +38,8 @@ class Limitador:
 
     def registrar(self, ip: str, ahora: float | None = None) -> None:
         """Anota una sesion nueva. Falla si algun tope esta alcanzado."""
+        if es_local(ip):
+            return
         t = time.monotonic() if ahora is None else ahora
 
         self._purgar(self._del_dia, t, 86_400)
@@ -36,12 +49,16 @@ class Limitador:
                 "Escribinos y la seguimos por chat."
             )
 
+        # El limite por IP esta para frenar un script, no a una persona.
+        # Nadie prueba una demo veinte veces en una hora de casualidad; un
+        # bot si. Un tope estricto aca espanta clientes curiosos, que son
+        # justo los que queremos que prueben.
         cola = self._por_ip[ip]
         self._purgar(cola, t, 3_600)
         if len(cola) >= self.por_ip_hora:
             raise LimiteAlcanzado(
-                "Ya probaste la demo varias veces en la ultima hora. "
-                "Volve en un rato y seguimos."
+                "Estas probando muy seguido. Espera unos minutos y segui, "
+                "o escribinos y lo vemos juntos."
             )
 
         cola.append(t)

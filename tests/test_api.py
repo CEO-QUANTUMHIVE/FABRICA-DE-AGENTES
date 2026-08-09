@@ -49,6 +49,13 @@ class TestNiveles:
 
 
 class TestLimitador:
+    def test_nunca_limita_desde_la_maquina_propia(self):
+        """Un limite que te frena mientras desarrollas termina borrado."""
+        lim = Limitador(por_ip_hora=1, por_dia=1)
+        for _ in range(50):
+            lim.registrar("127.0.0.1")
+            lim.registrar("192.168.1.40")
+
     def test_corta_por_ip_a_la_hora(self):
         lim = Limitador(por_ip_hora=2, por_dia=100)
         lim.registrar("1.1.1.1", ahora=0)
@@ -121,11 +128,19 @@ class TestEndpoints:
         assert d["nivel"] == 1
 
     async def test_al_pasarse_del_limite_responde_429(self, cliente):
+        """Se simula una IP publica: desde localhost no se limita nunca."""
         c = await cliente(MAX_SESSIONS_PER_IP_HOUR="1")
-        assert (await c.post("/api/token", json={"nivel": 1})).status == 200
-        r = await c.post("/api/token", json={"nivel": 1})
+        visitante = {"X-Forwarded-For": "200.1.2.3"}
+        assert (await c.post("/api/token", json={"nivel": 1}, headers=visitante)).status == 200
+        r = await c.post("/api/token", json={"nivel": 1}, headers=visitante)
         assert r.status == 429
         assert "error" in await r.json()
+
+    async def test_desde_localhost_no_se_limita(self, cliente):
+        """Probar la demo en tu propia maquina no puede bloquearte."""
+        c = await cliente(MAX_SESSIONS_PER_IP_HOUR="1")
+        for _ in range(5):
+            assert (await c.post("/api/token", json={"nivel": 1})).status == 200
 
     async def test_el_token_nunca_lleva_las_claves_de_los_proveedores(self, cliente):
         c = await cliente()
