@@ -49,6 +49,8 @@ class Config:
     fish_model: str
     fish_latency_mode: str
     fish_voice_id: str
+    fish_speed: float
+    fish_temperature: float
     idioma: str
     stt_prompt: str
     max_session_seconds: int
@@ -76,6 +78,8 @@ def cargar(entorno: dict[str, str] | None = None) -> Config:
         stt_prompt=e.get("STT_PROMPT", VOCABULARIO_DE_MARCA),
         fish_model=e.get("FISH_MODEL", "s2.1-pro"),
         fish_latency_mode=e.get("FISH_LATENCY_MODE", "low"),
+        fish_speed=float(e.get("FISH_SPEED", "1.12")),
+        fish_temperature=float(e.get("FISH_TEMPERATURE", "0.8")),
         fish_voice_id=e.get("FISH_VOICE_ID", ""),
         idioma=e.get("IDIOMA", "es"),
         max_session_seconds=int(e.get("MAX_SESSION_SECONDS", "240")),

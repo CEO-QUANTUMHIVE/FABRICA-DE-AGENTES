@@ -14,10 +14,17 @@ from motor_voz.config import Config
 
 
 def opciones(config: Config) -> dict[str, Any]:
-    """El default de latency_mode es 'balanced'; para Live queremos 'low'."""
+    """El default de latency_mode es 'balanced'; para Live queremos 'low'.
+
+    `speed` y `temperature` salen de configuracion porque son de oido, no de
+    calculo: se ajustan escuchando. A 1.0 el modelo habla pausado entre
+    palabras y suena robotico; validado a oido, 1.12 da el ritmo natural.
+    """
     opts: dict[str, Any] = {
         "model": config.fish_model,
         "latency_mode": config.fish_latency_mode,
+        "speed": config.fish_speed,
+        "temperature": config.fish_temperature,
         "api_key": config.fish_api_key,
     }
     if config.fish_voice_id.strip():

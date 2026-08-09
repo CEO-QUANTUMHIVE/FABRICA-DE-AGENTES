@@ -77,6 +77,23 @@ def test_opciones_tts_usan_el_modelo_del_spec():
     assert opciones["model"] == "s2.1-pro"
 
 
+def test_opciones_tts_aceleran_el_habla():
+    """A 1.0 el modelo habla pausado entre palabras y suena robotico."""
+    opciones = tts.opciones(cargar(ENTORNO))
+    assert opciones["speed"] == 1.12
+
+
+def test_opciones_tts_pasan_la_temperatura():
+    opciones = tts.opciones(cargar(ENTORNO))
+    assert opciones["temperature"] == 0.8
+
+
+def test_el_ritmo_y_la_expresividad_se_pueden_ajustar_por_entorno():
+    opciones = tts.opciones(cargar(ENTORNO | {"FISH_SPEED": "1.25", "FISH_TEMPERATURE": "0.95"}))
+    assert opciones["speed"] == 1.25
+    assert opciones["temperature"] == 0.95
+
+
 def test_opciones_tts_omiten_voice_id_si_no_esta_configurado():
     """Sin voice_id, el plugin usa su voz por defecto en vez de romper."""
     opciones = tts.opciones(cargar(ENTORNO))
