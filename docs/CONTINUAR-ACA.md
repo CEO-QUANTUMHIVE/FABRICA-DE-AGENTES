@@ -56,34 +56,57 @@ GCP_LOCATION   us-east4
 
 ## 3. Lo que FALTA — en orden
 
-### 3.1 Poner la API y el agente en la VM ← ARRANCAR POR ACÁ
+### 3.1 API y agente en producción ← ✅ HECHO (2026-08-09)
 
-**Es lo único que separa el motor de estar en producción.** Hoy en la VM
-solo corre LiveKit y Caddy; la API y el agente siguen únicamente en local.
+**Ya no es lo que separa al motor de producción.** Terminó en una VM
+separada de LiveKit, no en la misma — la razón cambió a mitad de camino.
 
-Decisión ya tomada: **van en la VM, no en Cloud Run.** El servicio de Cloud
-Run está desplegado pero devuelve 403 porque la política de organización
-`iam.allowedPolicyMemberDomains` bloquea `allUsers`, y Sergio eligió no
-aflojarla. Servir desde la VM además evita CORS —mismo origen que LiveKit—
-y es gratis.
+Medimos memoria real antes de decidir: importar livekit + plugins cuesta
+470 MB fijos por proceso, el modelo VAD 16 MB más, y cada conversación
+solo 12 MB. Con eso, meter el agente en la e2-micro de LiveKit (969 MB)
+era jugado — y los defaults de producción de LiveKit lo hacían peor:
+`num_idle_processes` trae `prod_default=4`, o sea 4 procesos ociosos a
+470 MB cada uno (1,9 GB) antes de atender la primera llamada. Eso se
+blindó en [`agente.py`](../src/motor_voz/voice/agente.py) — commit
+`6b63f9b` — con `num_idle_processes=0`, `job_executor_type=THREAD`
+(comparte el costo fijo entre sesiones en vez de pagarlo por proceso) y
+`job_memory_warn_mb=600`, todo configurable por entorno.
 
-Pasos:
+Decisión final: **dos VMs, no Cloud Run.** El servicio de Cloud Run sigue
+desplegado pero devuelve 403 por la política `iam.allowedPolicyMemberDomains`
+que bloquea `allUsers`, y Sergio eligió no aflojarla.
 
-1. Clonar el repo en la VM (es público) en la rama `arquitectura/spec-motor-voz`
-2. Crear el `.env` con las claves. Están en Secret Manager:
-   `motor-voz-groq`, `motor-voz-fish`, `motor-voz-livekit-key`,
-   `motor-voz-livekit-secret`
-3. `LIVEKIT_URL=wss://voz.quantumhive.com.ar`
-4. Dos servicios systemd con `Restart=always`:
-   - `motor-voz-api` → `python -m motor_voz.api.servidor` en el puerto 8080
-   - `motor-voz-agente` → `python -m motor_voz.voice.agente start`
-5. Ampliar el `Caddyfile` para que rutee `/api/*` a `localhost:8080` y el
-   resto a LiveKit en `localhost:7880`
+- `livekit-quantumhive` (e2-micro, gratis) — sigue solo con LiveKit + Caddy,
+  **sin tocar**. 969 MB, ~594 MB disponibles sin el agente compitiendo.
+- `motor-voz-agente` (e2-medium, `us-east1-b`, IP interna `10.142.0.9`) —
+  VM nueva, corre la API y el agente. Necesitó:
+  - IP externa propia (excepción a `constraints/compute.vmExternalIpAccess`
+    agregada por Sergio — esa política no la toca un agente) porque el
+    agente llama a Groq/Fish/LiveKit en cada conversación, no solo en el
+    setup. No hay Cloud NAT en el proyecto.
+  - `.env` armado a mano con `LIVEKIT_URL=wss://voz.quantumhive.com.ar` y
+    las claves de Secret Manager (`motor-voz-groq`, `motor-voz-fish`,
+    `motor-voz-livekit-key`, `motor-voz-livekit-secret`) — **cuidado**: la
+    VM no tiene scope de Secret Manager (mismo scope que la de LiveKit),
+    así que las claves se empujan por `scp`, no se leen desde la VM.
+  - Dos servicios systemd con `Restart=always`: `motor-voz-api`
+    (`python -m motor_voz.api.servidor`, puerto 8080) y `motor-voz-agente`
+    (`python -m motor_voz.voice.agente start`).
+- `Caddyfile` en `livekit-quantumhive` ahora usa `handle` para que
+  `/api/*` vaya a `10.142.0.9:8080` (la VM del agente) y el resto a
+  LiveKit en `localhost:7880`. El firewall `default-allow-internal` ya
+  cubre el tráfico entre VMs, no hizo falta regla nueva.
 
-**Atención con la memoria.** La VM tiene 969 MB y ya hay 2 GB de swap
-configurados. LiveKit + Caddy usan ~390 MB. El agente carga el modelo VAD
-de silero y puede pedir 300-400 MB. Va a entrar, pero **verificá `free -m`
-después de levantar todo** — si el agente muere sin explicación, es OOM.
+Verificado end-to-end: `/api/salud`, `/api/niveles` y `POST /api/token`
+responden por `https://voz.quantumhive.com.ar`, el token emitido trae sala
+y JWT válidos, y el worker aparece `registered` en los logs de LiveKit.
+`free -m` en ambas VMs con margen (594 MB y 3,2 GB disponibles).
+
+Trampa nueva para el próximo: si copiás un `.env` local a producción,
+**revisá `LIVEKIT_API_KEY`/`LIVEKIT_API_SECRET`** — el `.env` de desarrollo
+tiene las credenciales de `livekit-server --dev` (`devkey`/`secret`, 6
+bytes), no las de Secret Manager. Con esas el agente conecta y arranca
+bien, pero LiveKit lo rechaza con 401 recién al intentar registrarse.
 
 ### 3.2 Probar el nivel 2 (Gemini) en vivo
 
