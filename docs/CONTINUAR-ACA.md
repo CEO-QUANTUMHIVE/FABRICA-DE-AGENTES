@@ -108,13 +108,29 @@ tiene las credenciales de `livekit-server --dev` (`devkey`/`secret`, 6
 bytes), no las de Secret Manager. Con esas el agente conecta y arranca
 bien, pero LiveKit lo rechaza con 401 recién al intentar registrarse.
 
-### 3.2 Probar el nivel 2 (Gemini) en vivo
+### 3.2 Probar el nivel 2 (Gemini) en vivo ← ✅ HECHO (2026-08-09)
 
-**Nunca se ejecutó.** El modelo y la región ya están corregidos copiando lo
-que usa Quantum Assistant, pero la conexión no se probó ni una vez.
+**Andaba mal, y no era ni el modelo ni la región.** Al probarlo en vivo por
+primera vez tiraba `RuntimeError: Plugins must be registered on the main
+thread`. Causa real: `voice/motores.py` importaba `livekit.plugins.google`
+recién adentro de `_gemini()`, que corre en el hilo del job, no en el
+principal — y livekit-agents exige que el registro de plugins pase por
+ahí. Mismo problema latente en `_openai()`. Fix en commit `25603f3`:
+los tres imports (`silero`, `google`, `openai.realtime`) se movieron a
+nivel de módulo.
 
-Consume créditos de Google Cloud vía Vertex AI, no tarjeta. Si falla, el
-error de Google nombra los modelos válidos y se corrige en una variable.
+Verificado en producción contra Vertex AI real: `model_provider: "Vertex
+AI"`, `model_name: "gemini-live-2.5-flash-native-audio"`, tokens de audio
+de salida generados, sin error. Consume créditos de Google Cloud del
+proyecto `bubbly-stone-502214-u7`, no tarjeta.
+
+De paso quedó una mejora de higiene que no era la causa pero no estaba de
+más: la VM `motor-voz-agente` se había creado con los scopes de OAuth de
+`livekit-quantumhive` (logging, monitoring, pubsub…), sin `cloud-platform`.
+Se le agregó ese scope (para Vertex AI y lo que venga). El service account
+ya tenía el rol IAM correcto (`roles/aiplatform.user`) desde el vamos — el
+IAM nunca fue el problema, el scope de la instancia sí lo hubiera sido para
+cualquier otra llamada a una API de Google Cloud desde esa VM.
 
 ### 3.3 Nivel 3 (OpenAI) — bloqueado
 
