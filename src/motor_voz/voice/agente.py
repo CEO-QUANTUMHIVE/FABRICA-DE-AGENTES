@@ -44,7 +44,7 @@ class Receptor(Agent):
 
 
 def motor_de_la_sala(nombre: str, por_defecto: str) -> str:
-    """Extrae el motor del nombre de sala `demo-<motor>-<aleatorio>`.
+    """Extrae el motor del nombre de sala `demo-<motor>-<voz>-<aleatorio>`.
 
     Si el nombre no sigue ese formato — una sala creada a mano, por ejemplo —
     se usa el motor de la configuracion.
@@ -52,6 +52,20 @@ def motor_de_la_sala(nombre: str, por_defecto: str) -> str:
     partes = nombre.split("-")
     if len(partes) >= 3 and partes[0] == "demo" and partes[1] in motores.MOTORES:
         return partes[1]
+    return por_defecto
+
+
+def voz_de_la_sala(nombre: str, por_defecto: str) -> str:
+    """Extrae la voz de Gemini del nombre de sala `demo-<motor>-<voz>-<aleatorio>`.
+
+    Solo importa cuando el motor es gemini; en los demas casos el campo
+    esta igual (servidor.py siempre lo manda) pero no se usa para nada.
+    Se valida contra el catalogo real: un nombre de sala armado a mano no
+    puede pedirle a Vertex una voz que no existe.
+    """
+    partes = nombre.split("-")
+    if len(partes) >= 4 and partes[0] == "demo" and partes[2] in motores.VOCES_GEMINI:
+        return partes[2]
     return por_defecto
 
 
@@ -83,19 +97,25 @@ async def entrypoint(ctx: JobContext) -> None:
     # emitir el token. Como el token restringe a que sala se puede entrar,
     # el navegador no lo puede falsear: no puede pedir el plan premium por
     # su cuenta.
-    config = dataclasses.replace(cargar(), motor=motor_de_la_sala(ctx.room.name, cargar().motor))
+    base = cargar()
+    config = dataclasses.replace(
+        base,
+        motor=motor_de_la_sala(ctx.room.name, base.motor),
+        gemini_voice=voz_de_la_sala(ctx.room.name, base.gemini_voice),
+    )
     ctx.log_context_fields = {"room": ctx.room.name, "motor": config.motor}
 
     # Se imprime la config al arrancar cada sesion: sin esto no hay forma de
     # saber a simple vista si el worker esta corriendo el codigo nuevo o
     # quedo con el viejo porque no se reinicio.
     logger.info(
-        "sesion nueva | plan=%s motor=%s | voz=%s speed=%s temp=%s",
+        "sesion nueva | plan=%s motor=%s | voz=%s speed=%s temp=%s | voz_gemini=%s",
         motores.PLANES.get(config.motor, "?"),
         config.motor,
         config.fish_voice_id[:12] or "(default)",
         config.fish_speed,
         config.fish_temperature,
+        config.gemini_voice,
     )
 
     # Los motores de voz a voz generan el habla directamente: no pasan por

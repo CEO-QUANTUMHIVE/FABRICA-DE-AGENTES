@@ -1,12 +1,14 @@
-"""Servidor HTTP: emite tokens firmados y expone el catalogo de niveles.
+"""Servidor HTTP: emite tokens firmados y expone los catalogos de niveles y voces.
 
-    GET  /api/salud     estado del servicio
-    GET  /api/niveles   los tres niveles, para dibujar el selector
-    POST /api/token     {"nivel": 1|2|3} -> token de LiveKit
+    GET  /api/salud          estado del servicio
+    GET  /api/niveles        los tres niveles, para dibujar el selector
+    GET  /api/voces-gemini   las voces del motor gemini, para el nivel "voz humana"
+    POST /api/token          {"nivel": 1|2|3, "voz"?: "Puck"|...} -> token de LiveKit
 
-El nivel viaja FIRMADO dentro del token, en la metadata del participante.
-El agente lee de ahi, no de lo que diga el navegador: si el cliente pudiera
-elegir el motor por su cuenta, cualquiera consumiria el plan premium.
+El nivel y la voz viajan FIRMADOS dentro del token, en la metadata del
+participante y en el nombre de sala. El agente lee de ahi, no de lo que
+diga el navegador: si el cliente pudiera elegirlos por su cuenta,
+cualquiera consumiria el plan premium o pediria una voz que no existe.
 
 Se usa aiohttp porque ya viene con LiveKit. No suma dependencias.
 """
@@ -23,6 +25,7 @@ from livekit import api
 from motor_voz.api import niveles as catalogo_niveles
 from motor_voz.api.limites import LimiteAlcanzado, Limitador
 from motor_voz.config import Config, cargar
+from motor_voz.voice.motores import VOCES_GEMINI, VOZ_GEMINI_POR_DEFECTO
 
 logger = logging.getLogger("motor-voz.api")
 ORIGENES_PERMITIDOS = "*"  # la demo es publica; en produccion, el dominio propio
@@ -51,6 +54,14 @@ async def listar_niveles(peticion: web.Request) -> web.Response:
     return _cors(web.json_response({"niveles": catalogo_niveles.catalogo()}))
 
 
+async def listar_voces_gemini(peticion: web.Request) -> web.Response:
+    return _cors(
+        web.json_response(
+            {"voces": [{"voz": clave, "nombre": nombre} for clave, nombre in VOCES_GEMINI.items()]}
+        )
+    )
+
+
 async def emitir_token(peticion: web.Request) -> web.Response:
     config: Config = peticion.app["config"]
     limitador: Limitador = peticion.app["limitador"]
@@ -65,6 +76,17 @@ async def emitir_token(peticion: web.Request) -> web.Response:
     except catalogo_niveles.NivelInvalido as e:
         return _cors(web.json_response({"error": str(e)}, status=400))
 
+    # La voz solo tiene sentido en el motor gemini; en los otros se ignora.
+    # Igual que el motor, viaja firmada adentro del nombre de sala: el
+    # navegador no puede pedir una voz que no exista.
+    voz = str(cuerpo.get("voz") or VOZ_GEMINI_POR_DEFECTO)
+    if voz not in VOCES_GEMINI:
+        return _cors(
+            web.json_response(
+                {"error": f"Voz invalida. Validas: {', '.join(VOCES_GEMINI)}"}, status=400
+            )
+        )
+
     ip = _ip_de(peticion)
     try:
         limitador.registrar(ip)
@@ -72,15 +94,15 @@ async def emitir_token(peticion: web.Request) -> web.Response:
         logger.info("limite alcanzado para %s", ip)
         return _cors(web.json_response({"error": str(e)}, status=429))
 
-    sala = f"demo-{nivel.motor}-{secrets.token_hex(6)}"
+    sala = f"demo-{nivel.motor}-{voz}-{secrets.token_hex(6)}"
     identidad = f"visitante-{secrets.token_hex(4)}"
 
     token = (
         api.AccessToken(config.livekit_api_key, config.livekit_api_secret)
         .with_identity(identidad)
         .with_name("Visitante")
-        # El motor va firmado: el agente lee de aca y no del navegador.
-        .with_metadata(json.dumps({"motor": nivel.motor, "nivel": nivel.numero}))
+        # El motor y la voz van firmados: el agente lee de aca, no del navegador.
+        .with_metadata(json.dumps({"motor": nivel.motor, "nivel": nivel.numero, "voz": voz}))
         .with_grants(
             api.VideoGrants(
                 room_join=True, room=sala, can_publish=True, can_subscribe=True
@@ -89,7 +111,9 @@ async def emitir_token(peticion: web.Request) -> web.Response:
         .to_jwt()
     )
 
-    logger.info("token emitido | nivel=%s motor=%s sala=%s", nivel.numero, nivel.motor, sala)
+    logger.info(
+        "token emitido | nivel=%s motor=%s voz=%s sala=%s", nivel.numero, nivel.motor, voz, sala
+    )
     return _cors(
         web.json_response(
             {
@@ -98,6 +122,8 @@ async def emitir_token(peticion: web.Request) -> web.Response:
                 "sala": sala,
                 "nivel": nivel.numero,
                 "plan": nivel.plan,
+                "voz": voz,
+                "nombre_voz": VOCES_GEMINI[voz],
                 "duracion_maxima_seg": config.max_session_seconds,
             }
         )
@@ -120,6 +146,7 @@ def crear_app(config: Config | None = None) -> web.Application:
         [
             web.get("/api/salud", salud),
             web.get("/api/niveles", listar_niveles),
+            web.get("/api/voces-gemini", listar_voces_gemini),
             web.post("/api/token", emitir_token),
             web.options("/api/{resto:.*}", preflight),
         ]

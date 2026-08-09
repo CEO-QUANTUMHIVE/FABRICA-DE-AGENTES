@@ -48,6 +48,26 @@ PLANES = {
     "openai": "premium",
 }
 
+# Las voces prearmadas que trae Gemini Live (verificado en
+# livekit.plugins.google.realtime.api_proto.Voice, el 2026-08-10). Son
+# nombres de estrellas en ingles, asi que el catalogo que ve el visitante
+# usa nombres argentinos en su lugar — los mismos que ya eligio
+# QUANTUM-ASISTENTE- (apps/desktop/src/orbe/Orbe.tsx, rama
+# agent/navegador-integrado, constante NOMBRE_VOZ) para no duplicar el
+# criterio en dos lugares. La clave sigue siendo el nombre real: es lo
+# unico que entiende la API de Google.
+VOCES_GEMINI = {
+    "Puck": "Mateo",
+    "Charon": "Joaco",
+    "Fenrir": "Nico",
+    "Orus": "Tomás",
+    "Kore": "Delfi",
+    "Aoede": "Camila",
+    "Leda": "Sofía",
+    "Zephyr": "Mora",
+}
+VOZ_GEMINI_POR_DEFECTO = "Puck"
+
 
 class MotorNoDisponible(RuntimeError):
     """El motor pedido existe pero le faltan credenciales para funcionar."""

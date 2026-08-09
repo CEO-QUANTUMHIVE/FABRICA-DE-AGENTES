@@ -123,11 +123,17 @@ html, body, #raiz {
   width: min(440px, calc(100vw - 24px));
   height: min(620px, calc(100vh - 100px));
   background: var(--qh-panel);
-  border: 1px solid var(--qh-borde);
+  border: 1.5px solid var(--qh-acento-2);
   border-radius: 16px;
   padding: 12px;
   gap: 8px;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+  /* El borde solo (1.5px) se pierde contra fondos oscuros o claros por
+     igual. El glow lo separa del fondo sin depender de que contraste
+     bien con lo que haya detras. */
+  box-shadow:
+    0 12px 40px rgba(0, 0, 0, 0.5),
+    0 0 22px rgba(201, 168, 76, 0.45),
+    inset 0 0 14px rgba(201, 168, 76, 0.08);
 }
 .widget--abierto .widget__panel { display: flex; }
 .widget--abierto .widget__esfera { width: 44px; height: 44px; }
@@ -168,6 +174,56 @@ html, body, #raiz {
 }
 .widget__motor:disabled { opacity: .4; cursor: not-allowed; }
 .widget__motor small { display: block; font-size: 8.5px; font-weight: 400; opacity: .8; }
+
+/* ---------- voces de gemini ----------
+   Calcado de QUANTUM-ASISTENTE- (.orbe__fuentes-resumen / .orbe__voces /
+   .orbe__voz-chip en orbe.css) — mismo patron de resumen que se abre en
+   una grilla de chips, mismo estado data-activa. Solo cambia el prefijo
+   de clase para no chocar con el resto de este archivo. */
+
+.widget__voces-resumen {
+  flex: 0 0 auto;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 9px;
+  background: transparent;
+  color: var(--qh-texto);
+  border: 1px solid var(--qh-borde);
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: border-color 150ms ease;
+}
+.widget__voces-resumen:hover { border-color: var(--qh-acento-2); }
+.widget__voces-resumen-texto { flex: 1; text-align: left; }
+.widget__voces-resumen-flecha { color: var(--qh-tenue); font-size: 10px; }
+
+.widget__voces {
+  flex: 0 0 auto;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 5px;
+}
+.widget__voz-chip {
+  padding: 6px 2px;
+  background: transparent;
+  color: var(--qh-tenue);
+  border: 1px solid var(--qh-borde);
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  transition: border-color 150ms ease, color 150ms ease, background 150ms ease;
+}
+.widget__voz-chip:hover:not(:disabled) { border-color: var(--qh-acento-2); color: var(--qh-texto); }
+.widget__voz-chip[data-activa='true'] {
+  border-color: var(--qh-acento-2);
+  background: #1d1a12;
+  color: var(--qh-acento-2);
+}
+.widget__voz-chip:disabled { opacity: .5; cursor: not-allowed; }
 
 /* ---------- registro de la conversacion ---------- */
 
