@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Agente de QuantumHive</title>
+    <link rel="stylesheet" href="./app.css" />
+  </head>
+  <body>
+    <div id="raiz">
+      <div id="widget" class="widget" data-estado="dormido">
+        <div class="widget__panel">
+          <div class="widget__cabecera">
+            <span class="widget__titulo">Hablá con el agente</span>
+            <button id="cerrar" class="widget__cerrar" aria-label="Cerrar">✕</button>
+          </div>
+
+          <div id="motores" class="widget__motores" role="radiogroup" aria-label="Motor de conversación"></div>
+
+          <p id="aviso" class="widget__aviso" hidden></p>
+
+          <div id="registro" class="widget__registro">
+            <p class="widget__vacio">Tocá el micrófono y hablá, o escribí acá abajo.</p>
+          </div>
+
+          <div class="widget__controles">
+            <button id="mic" class="widget__mic" title="Hablar">🎙</button>
+            <div class="widget__escribir">
+              <input id="borrador" placeholder="Escribí…" />
+              <button id="enviar" aria-label="Enviar">↑</button>
+            </div>
+            <button id="cortar" class="widget__cortar" title="Terminar" disabled>■</button>
+          </div>
+
+          <p class="widget__marca-pie">Con tecnología de <a href="https://www.quantumhive.com.ar" target="_blank" rel="noopener">QuantumHive</a></p>
+        </div>
+
+        <button id="esfera" class="widget__esfera" aria-label="Abrir el agente">
+          <span id="marca-texto" class="widget__marca">QH</span>
+        </button>
+      </div>
+    </div>
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

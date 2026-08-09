@@ -1,0 +1,245 @@
+/* Widget embebible del orbe.
+   Vive solo, adentro de su propio iframe: no hay CSS del sitio del
+   cliente compitiendo aca, asi que no hace falta pelear especificidad.
+   Lenguaje visual portado de QUANTUM-ASISTENTE- (apps/desktop/src/orbe/orbe.css,
+   rama agent/navegador-integrado), adaptado de ventana Electron a panel
+   flotante embebido. */
+
+:root {
+  --qh-fondo: #07070c;
+  --qh-panel: rgba(11, 11, 18, 0.97);
+  --qh-borde: #24243a;
+  --qh-texto: #e8e8f0;
+  --qh-tenue: #8a8aa0;
+  /* Acento por defecto: la paleta de www.quantumhive.com.ar. Un cliente
+     puede pisar estas dos variables via data-acento en el <script>. */
+  --qh-acento: #00d4ff;
+  --qh-acento-2: #c9a84c;
+  --qh-rojo: #d9534f;
+}
+
+* { box-sizing: border-box; }
+
+html, body, #raiz {
+  height: 100%;
+  margin: 0;
+  background: transparent;
+  overflow: hidden;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  color: var(--qh-texto);
+}
+
+.widget {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: flex-end;
+  gap: 10px;
+}
+
+/* ---------- la esfera, colapsada ---------- */
+/* El logo va tal cual es, sin fondo, sin borde, sin recorte en un
+   circulo: nada de "redondel". Lo unico que hace de indicador de estado
+   es un halo (drop-shadow, que sigue el alfa del PNG en vez de dibujar
+   una caja) que respira todo el tiempo y cambia de color e intensidad
+   segun lo que este pasando. */
+
+.widget__esfera {
+  width: 200px;
+  height: 200px;
+  padding: 0;
+  border: none;
+  background: none;
+  display: grid;
+  place-items: center;
+  position: relative;
+  cursor: pointer;
+  flex: 0 0 auto;
+  transition: width 200ms ease, height 200ms ease;
+}
+.widget__esfera img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  pointer-events: none;
+}
+.widget__marca {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -1px;
+  color: var(--qh-tenue);
+  user-select: none;
+  pointer-events: none;
+}
+.widget__esfera img,
+.widget__marca {
+  animation: qh-respirar 3.2s ease-in-out infinite;
+  filter: drop-shadow(0 0 6px rgba(138, 138, 160, 0.35));
+  transition: filter 300ms ease;
+}
+
+/* Un estado por cada cosa que puede estar pasando — sin esto el logo es
+   mudo y no se sabe si escucha, si conecto o si se cayo. Cambia el halo
+   y el ritmo de la respiracion; la forma del logo no se toca nunca. */
+
+.widget[data-estado='dormido'] .widget__esfera img,
+.widget[data-estado='dormido'] .widget__marca {
+  filter: drop-shadow(0 0 5px rgba(138, 138, 160, 0.25));
+  opacity: 0.75;
+}
+.widget[data-estado='conectando'] .widget__esfera img,
+.widget[data-estado='conectando'] .widget__marca {
+  filter: drop-shadow(0 0 13px rgba(0, 212, 255, 0.55));
+  animation-duration: 1s;
+}
+.widget[data-estado='escuchando'] .widget__esfera img,
+.widget[data-estado='escuchando'] .widget__marca {
+  filter: drop-shadow(0 0 17px rgba(0, 212, 255, 0.8));
+  animation-duration: 1.4s;
+}
+.widget[data-estado='hablando'] .widget__esfera img,
+.widget[data-estado='hablando'] .widget__marca {
+  filter: drop-shadow(0 0 19px rgba(201, 168, 76, 0.9));
+  animation-duration: 700ms;
+}
+.widget[data-estado='error'] .widget__esfera img,
+.widget[data-estado='error'] .widget__marca {
+  filter: drop-shadow(0 0 14px rgba(217, 83, 79, 0.75));
+  animation-play-state: paused;
+  opacity: 0.9;
+}
+
+@keyframes qh-respirar {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.06); }
+}
+
+/* ---------- el panel, expandido ---------- */
+
+.widget__panel {
+  display: none;
+  flex-direction: column;
+  width: min(440px, calc(100vw - 24px));
+  height: min(620px, calc(100vh - 100px));
+  background: var(--qh-panel);
+  border: 1px solid var(--qh-borde);
+  border-radius: 16px;
+  padding: 12px;
+  gap: 8px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+}
+.widget--abierto .widget__panel { display: flex; }
+.widget--abierto .widget__esfera { width: 44px; height: 44px; }
+.widget--abierto .widget__marca { font-size: 13px; }
+
+.widget__cabecera {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex: 0 0 auto;
+}
+.widget__titulo { font-size: 12px; letter-spacing: .04em; color: var(--qh-tenue); }
+.widget__cerrar {
+  background: none; border: 0; color: var(--qh-tenue);
+  font-size: 16px; line-height: 1; cursor: pointer; padding: 2px 6px;
+}
+.widget__cerrar:hover { color: var(--qh-texto); }
+
+/* ---------- selector de motor ---------- */
+
+.widget__motores { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; flex: 0 0 auto; }
+.widget__motor {
+  padding: 6px 2px;
+  border: 1px solid var(--qh-borde);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--qh-tenue);
+  font-size: 10.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color .2s, color .2s, background .2s;
+}
+.widget__motor:hover:not(:disabled) { color: var(--qh-texto); border-color: var(--qh-acento); }
+.widget__motor[aria-checked='true'] {
+  color: #07070c;
+  background: linear-gradient(100deg, var(--qh-acento), var(--qh-acento-2));
+  border-color: transparent;
+}
+.widget__motor:disabled { opacity: .4; cursor: not-allowed; }
+.widget__motor small { display: block; font-size: 8.5px; font-weight: 400; opacity: .8; }
+
+/* ---------- registro de la conversacion ---------- */
+
+.widget__aviso {
+  flex: 0 0 auto;
+  background: #2a1414;
+  border: 1px solid var(--qh-rojo);
+  border-radius: 8px;
+  padding: 7px 9px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: #f0c7c5;
+  cursor: pointer;
+}
+
+.widget__registro {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-right: 2px;
+}
+.widget__vacio {
+  margin: auto 0;
+  text-align: center;
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--qh-tenue);
+  padding: 0 8px;
+}
+.turno {
+  font-size: 12px;
+  line-height: 1.45;
+  padding: 6px 9px;
+  border-radius: 9px;
+  word-break: break-word;
+  max-width: 90%;
+}
+.turno[data-quien='yo'] { align-self: flex-end; background: #16232a; border: 1px solid #1f3a44; }
+.turno[data-quien='agente'] { align-self: flex-start; background: #16161f; border: 1px solid var(--qh-borde); }
+
+/* ---------- escribir y controles ---------- */
+
+.widget__controles { display: flex; gap: 5px; flex: 0 0 auto; }
+.widget__mic, .widget__cortar {
+  width: 32px; height: 32px; padding: 0; border-radius: 8px;
+  border: 1px solid var(--qh-borde); background: transparent;
+  color: var(--qh-tenue); font-size: 13px; cursor: pointer;
+}
+.widget__mic[data-on='true'] { border-color: var(--qh-acento); color: var(--qh-acento); }
+.widget__cortar { color: #fca5a5; }
+.widget__escribir { flex: 1; display: flex; gap: 5px; }
+.widget__escribir input {
+  flex: 1; min-width: 0; background: var(--qh-fondo); color: var(--qh-texto);
+  border: 1px solid var(--qh-borde); border-radius: 8px; padding: 6px 9px; font-size: 12px;
+}
+.widget__escribir input:focus { outline: none; border-color: var(--qh-acento-2); }
+.widget__escribir button { width: 30px; border-radius: 8px; border: 1px solid var(--qh-borde); background: transparent; color: var(--qh-texto); cursor: pointer; }
+
+/* ---------- marca de QuantumHive ---------- */
+
+.widget__marca-pie {
+  flex: 0 0 auto;
+  text-align: center;
+  font-size: 9.5px;
+  color: var(--qh-tenue);
+}
+.widget__marca-pie a { color: var(--qh-acento-2); text-decoration: none; }
+.widget__marca-pie a:hover { text-decoration: underline; }
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation: none !important; transition: none !important; }
+}
