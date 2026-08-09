@@ -38,6 +38,15 @@ def test_el_prompt_habilita_los_signos_de_exclamacion():
     assert "¡" in texto, "Tiene que mostrar el signo, no solo nombrarlo"
 
 
+def test_el_prompt_define_la_naturalidad_como_conductas_observables():
+    """LiveKit: "friendly" no le dice nada al modelo; "arranca frases con Y"
+    si. La personalidad se define por lo que se escucha, no por adjetivos."""
+    texto = construir().lower()
+    assert "muletillas" in texto
+    assert "gramatica" in texto or "gramática" in texto
+    assert "alterna" in texto, "Tiene que pedir largo de frase variado"
+
+
 def test_el_prompt_da_ejemplos_de_como_hablar():
     """Describir el tono no alcanza: el modelo copia mejor de un ejemplo."""
     texto = construir().lower()

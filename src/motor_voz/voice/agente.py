@@ -25,6 +25,7 @@ from motor_voz.config import cargar
 from motor_voz.voice.providers import llm as proveedor_llm
 from motor_voz.voice.providers import stt as proveedor_stt
 from motor_voz.voice.providers import tts as proveedor_tts
+from motor_voz.voice.transformaciones import normalizar_para_voz
 
 logger = logging.getLogger("motor-voz")
 
@@ -57,6 +58,9 @@ async def entrypoint(ctx: JobContext) -> None:
         # Groq Whisper no hace endpointing: sin VAD el agente no sabe
         # cuando terminaste de hablar, y sin eso no hay interrupcion.
         vad=silero.VAD.load(),
+        # El TTS lee literal: sin esto pronuncia "24/7" como "24 septimo".
+        # Pedirselo al LLM no alcanza — falla, y el error sale al aire.
+        tts_text_transforms=["filter_markdown", "filter_emoji", normalizar_para_voz],
     )
 
     @session.on("metrics_collected")
