@@ -100,7 +100,41 @@ Tipo A    voz.<dominio>    ->    <IP de la VM>
 > los errores más difíciles de diagnosticar porque todo *parece* andar.
 
 **Certificado:** Caddy lo saca solo de Let's Encrypt y renueva sin
-intervención. Un `Caddyfile` de tres líneas alcanza.
+intervención. El `Caddyfile` entero son tres líneas:
+
+```
+voz.<dominio> {
+	reverse_proxy localhost:7880
+}
+```
+
+Caddy termina TLS y pasa **solo la señalización** a LiveKit. El audio no
+pasa por ahí: va directo por UDP a la VM. Por eso el registro DNS no puede
+estar proxeado.
+
+**Si el DNS está en Cloudflare, esto se automatiza por API** y no hace falta
+entrar al panel:
+
+```bash
+curl -X POST -H "Authorization: Bearer $CF_TOKEN" -H "Content-Type: application/json"   "https://api.cloudflare.com/client/v4/zones/$ZONA/dns_records"   --data '{"type":"A","name":"voz","content":"<IP>","ttl":120,"proxied":false}'
+```
+
+El token tiene que ser de tipo **Editar zona DNS**, con alcance a esa zona
+únicamente. Ojo: un token de R2 sirve para leer zonas pero **no** para
+escribir registros, y el error que devuelve —"Authentication error"— no lo
+aclara.
+
+### Verificación
+
+```bash
+curl -s -o /dev/null -w "%{http_code}
+" https://voz.<dominio>/
+echo | openssl s_client -connect voz.<dominio>:443 2>/dev/null | openssl x509 -noout -dates
+```
+
+Un `401` al pedir upgrade a WebSocket en `/rtc` **es la respuesta correcta**:
+significa que LiveKit está recibiendo la conexión y pidiendo credenciales.
+Un `502` sí sería un problema.
 
 ## A.3 — La API de tokens y el agente
 
