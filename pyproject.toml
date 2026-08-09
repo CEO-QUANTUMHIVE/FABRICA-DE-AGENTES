@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Motor de voz multi-tenant de QuantumHive"
 requires-python = ">=3.10"
 dependencies = [
-    "livekit-agents[groq,fishaudio,silero]~=1.6",
+    "livekit-agents[fishaudio,google,groq,silero]~=1.6",
     "livekit-api>=1.0",
     "python-dotenv>=1.0",
 ]

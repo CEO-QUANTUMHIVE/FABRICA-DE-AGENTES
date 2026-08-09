@@ -54,6 +54,24 @@ class Config:
     idioma: str
     stt_prompt: str
     max_session_seconds: int
+    # Plan comercial: que motor de conversacion usa este tenant.
+    motor: str
+    # Plan medio - Gemini Live. Con gcp_project va por Vertex AI y consume
+    # creditos de Google Cloud; con google_api_key es pago por uso.
+    gemini_model: str
+    gemini_voice: str
+    gemini_temperature: float
+    google_api_key: str
+    gcp_project: str
+    gcp_location: str
+    # Plan premium - OpenAI Realtime. Con azure_endpoint consume creditos de
+    # Azure; con openai_api_key es pago por uso.
+    openai_model: str
+    openai_voice: str
+    openai_api_key: str
+    azure_endpoint: str
+    azure_deployment: str
+    azure_api_key: str
 
 
 def cargar(entorno: dict[str, str] | None = None) -> Config:
@@ -83,4 +101,17 @@ def cargar(entorno: dict[str, str] | None = None) -> Config:
         fish_voice_id=e.get("FISH_VOICE_ID", ""),
         idioma=e.get("IDIOMA", "es"),
         max_session_seconds=int(e.get("MAX_SESSION_SECONDS", "240")),
+        motor=e.get("MOTOR", "pipeline").strip().lower(),
+        gemini_model=e.get("GEMINI_MODEL", "gemini-2.0-flash-live-001"),
+        gemini_voice=e.get("GEMINI_VOICE", "Puck"),
+        gemini_temperature=float(e.get("GEMINI_TEMPERATURE", "0.8")),
+        google_api_key=e.get("GOOGLE_API_KEY", ""),
+        gcp_project=e.get("GCP_PROJECT", ""),
+        gcp_location=e.get("GCP_LOCATION", "us-central1"),
+        openai_model=e.get("OPENAI_REALTIME_MODEL", "gpt-realtime-mini"),
+        openai_voice=e.get("OPENAI_VOICE", "alloy"),
+        openai_api_key=e.get("OPENAI_API_KEY", ""),
+        azure_endpoint=e.get("AZURE_OPENAI_ENDPOINT", ""),
+        azure_deployment=e.get("AZURE_OPENAI_DEPLOYMENT", ""),
+        azure_api_key=e.get("AZURE_OPENAI_API_KEY", ""),
     )

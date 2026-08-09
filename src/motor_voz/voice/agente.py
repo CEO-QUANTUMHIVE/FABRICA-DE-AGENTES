@@ -18,13 +18,10 @@ from livekit.agents import (
     metrics,
     room_io,
 )
-from livekit.plugins import silero
 
 from motor_voz.brain.prompt import construir
 from motor_voz.config import cargar
-from motor_voz.voice.providers import llm as proveedor_llm
-from motor_voz.voice.providers import stt as proveedor_stt
-from motor_voz.voice.providers import tts as proveedor_tts
+from motor_voz.voice import motores
 from motor_voz.voice.transformaciones import normalizar_para_voz
 
 logger = logging.getLogger("motor-voz")
@@ -55,24 +52,27 @@ async def entrypoint(ctx: JobContext) -> None:
     # saber a simple vista si el worker esta corriendo el codigo nuevo o
     # quedo con el viejo porque no se reinicio.
     logger.info(
-        "sesion nueva | voz=%s modelo=%s speed=%s temp=%s | normalizador=ACTIVO",
+        "sesion nueva | plan=%s motor=%s | voz=%s speed=%s temp=%s | normalizador=ACTIVO",
+        motores.PLANES.get(config.motor, "?"),
+        config.motor,
         config.fish_voice_id[:12] or "(default)",
-        config.fish_model,
         config.fish_speed,
         config.fish_temperature,
     )
 
-    session: AgentSession = AgentSession(
-        stt=proveedor_stt.crear(config),
-        llm=proveedor_llm.crear(config),
-        tts=proveedor_tts.crear(config),
-        # Groq Whisper no hace endpointing: sin VAD el agente no sabe
-        # cuando terminaste de hablar, y sin eso no hay interrupcion.
-        vad=silero.VAD.load(),
+    # Los motores de voz a voz generan el habla directamente: no pasan por
+    # texto, asi que no tiene sentido normalizarles el texto ni darles TTS.
+    extras: dict = {}
+    if config.motor == "pipeline":
         # El TTS lee literal: sin esto pronuncia "24/7" como "24 septimo".
         # Pedirselo al LLM no alcanza — falla, y el error sale al aire.
-        tts_text_transforms=["filter_markdown", "filter_emoji", normalizar_para_voz],
-    )
+        extras["tts_text_transforms"] = [
+            "filter_markdown",
+            "filter_emoji",
+            normalizar_para_voz,
+        ]
+
+    session: AgentSession = AgentSession(**motores.componentes(config), **extras)
 
     @session.on("metrics_collected")
     def _metricas(ev: MetricsCollectedEvent) -> None:
