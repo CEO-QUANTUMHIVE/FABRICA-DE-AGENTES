@@ -1,0 +1,18 @@
+# Nada de esto va al build de Cloud Run.
+.git/
+.venv/
+apis/
+.env
+.env.*
+!.env.example
+clon de sergio/
+graphify-out/
+frontend/demo/node_modules/
+scripts/livekit/
+tests/
+docs/
+*.wav
+*.mp3
+__pycache__/
+.pytest_cache/
+.ruff_cache/
