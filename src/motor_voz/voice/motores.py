@@ -25,7 +25,15 @@ from __future__ import annotations
 
 from typing import Any
 
-from livekit.plugins import silero
+# Los tres van arriba, a nivel de modulo, aunque _gemini/_openai los usen
+# recien mas abajo. livekit-agents registra cada plugin la primera vez que
+# se importa, y exige que ese registro pase por el hilo principal del
+# worker. Si el import quedara adentro de _gemini/_openai, la primera vez
+# que se pide ese motor el import ocurre DENTRO del hilo del job, y
+# revienta con "Plugins must be registered on the main thread". Verificado
+# el 2026-08-10 con el traceback real en produccion.
+from livekit.plugins import google, silero
+from livekit.plugins.openai import realtime as openai_realtime
 
 from motor_voz.config import Config
 from motor_voz.voice.providers import llm as proveedor_llm
@@ -90,8 +98,6 @@ def opciones_gemini(config: Config) -> dict[str, Any]:
 
 
 def _gemini(config: Config) -> dict[str, Any]:
-    from livekit.plugins import google
-
     return {"llm": google.beta.realtime.RealtimeModel(**opciones_gemini(config))}
 
 
@@ -117,12 +123,10 @@ def opciones_openai(config: Config) -> dict[str, Any]:
 
 
 def _openai(config: Config) -> dict[str, Any]:
-    from livekit.plugins.openai import realtime
-
     opts = opciones_openai(config)
     if opts.pop("_azure", False):
-        return {"llm": realtime.RealtimeModel.with_azure(**opts)}
-    return {"llm": realtime.RealtimeModel(**opts)}
+        return {"llm": openai_realtime.RealtimeModel.with_azure(**opts)}
+    return {"llm": openai_realtime.RealtimeModel(**opts)}
 
 
 _CONSTRUCTORES = {
