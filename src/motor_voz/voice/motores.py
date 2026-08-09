@@ -1,12 +1,17 @@
 """Los motores de conversacion disponibles. Cada uno es un plan comercial.
 
     basico    pipeline    Groq STT + Groq LLM + Fish TTS     ~USD 0,013/min
-    medio     gemini      Gemini Live, voz a voz             ~USD 0,037/min
-    premium   openai      OpenAI Realtime, voz a voz         ~USD 0,06-0,11/min
+    medio     gemini      Gemini Live, voz a voz             ~USD 0,012/min
+    premium   openai      OpenAI Realtime mini, voz a voz    ~USD 0,016/min
+
+Precios verificados el 2026-08-09 contra las paginas oficiales de Google y
+OpenAI. Contra lo que parecia, la voz a voz NO es cara: Gemini 3.1 Flash
+Live cuesta lo mismo o menos que el pipeline, porque el pipeline paga TTS
+de Fish por caracter y ahi se le va el 86% del costo.
 
 El pipeline arma la respuesta en texto y despues la lee: la emocion se pierde
 en esa frontera. Los de voz a voz generan el habla directamente, por eso
-suenan naturales — y por eso cuestan mas.
+suenan naturales. Y ahora sabemos que eso no se paga mas caro.
 
 Los dos premium se pueden facturar contra creditos en vez de tarjeta:
 Gemini por Vertex AI (creditos de Google Cloud) y OpenAI por Azure OpenAI
