@@ -8,12 +8,14 @@ from __future__ import annotations
 
 import dataclasses
 import logging
+import os
 
 from livekit.agents import (
     Agent,
     AgentServer,
     AgentSession,
     JobContext,
+    JobExecutorType,
     MetricsCollectedEvent,
     cli,
     metrics,
@@ -53,7 +55,26 @@ def motor_de_la_sala(nombre: str, por_defecto: str) -> str:
     return por_defecto
 
 
-server = AgentServer()
+# Medido: importar livekit y los plugins cuesta 440 MB, el modelo VAD 16 MB
+# mas, y cada conversacion apenas 12 MB. O sea que el costo es casi todo
+# fijo y se paga UNA vez por proceso.
+#
+# Por eso estos tres parametros no se dejan en su default:
+#
+# - num_idle_processes tiene prod_default=4, o sea cuatro procesos esperando
+#   trabajo a 470 MB cada uno: 1,9 GB parado sin atender a nadie. En una VM
+#   chica se muere antes de la primera llamada.
+# - job_executor_type=THREAD hace que las sesiones compartan el proceso y
+#   con el los 470 MB. Con procesos, cada sesion los pagaria de nuevo.
+# - job_memory_warn_mb viene en 1000, mas que la RAM de la VM entera: avisa
+#   cuando ya es tarde.
+#
+# Todo se puede subir por entorno cuando la maquina crezca.
+server = AgentServer(
+    job_executor_type=JobExecutorType.THREAD,
+    num_idle_processes=int(os.environ.get("AGENTE_PROCESOS_OCIOSOS", "0")),
+    job_memory_warn_mb=int(os.environ.get("AGENTE_AVISO_MEMORIA_MB", "600")),
+)
 
 
 @server.rtc_session()
