@@ -31,8 +31,8 @@ logger = logging.getLogger("motor-voz")
 class Receptor(Agent):
     """Agente receptor de QuantumHive."""
 
-    def __init__(self) -> None:
-        super().__init__(instructions=construir())
+    def __init__(self, motor: str) -> None:
+        super().__init__(instructions=construir(motor=motor, canal="web"))
 
     async def on_enter(self) -> None:
         self.session.generate_reply(
@@ -101,7 +101,7 @@ async def entrypoint(ctx: JobContext) -> None:
     ctx.add_shutdown_callback(registrar_uso)
 
     await session.start(
-        agent=Receptor(),
+        agent=Receptor(config.motor),
         room=ctx.room,
         room_options=room_io.RoomOptions(),
     )

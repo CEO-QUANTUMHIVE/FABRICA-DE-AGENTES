@@ -1,65 +1,106 @@
-from motor_voz.brain.prompt import PROMPT_QUANTUMHIVE, construir
+"""El prompt en tres capas: identidad, entrega y canal.
+
+Estos tests son la memoria de los errores que ya cometimos en produccion.
+Cada uno existe porque algo sono mal delante de Sergio.
+"""
+
+import pytest
+
+from motor_voz.brain.prompt import ENTREGA_LIVE, ENTREGA_PIPELINE, IDENTIDAD, construir
 
 
-def test_el_prompt_pide_respuestas_habladas_y_breves():
-    texto = construir().lower()
-    assert "breve" in texto or "corta" in texto
-    assert "voz" in texto or "hablado" in texto
+class TestIdentidad:
+    def test_es_la_misma_en_todos_los_motores(self):
+        """Si se duplicara por motor, derivaria: tocas uno y te olvidas del otro."""
+        for motor in ("pipeline", "gemini", "openai"):
+            assert IDENTIDAD in construir(motor=motor)
+
+    def test_prohibe_inventar_datos(self):
+        assert "invent" in construir().lower()
+
+    def test_habla_de_vos(self):
+        texto = construir().lower()
+        assert "rioplatense" in texto
+        assert "nunca de tu ni de usted" in texto
 
 
-def test_el_prompt_prohibe_markdown_y_emojis():
-    texto = construir().lower()
-    assert "markdown" in texto
-    assert "emoji" in texto
+class TestAgenteActivo:
+    """El agente contestaba una frase y dejaba al visitante colgado."""
+
+    def test_prohibe_terminar_sin_pregunta(self):
+        texto = construir().lower()
+        assert "nunca termines sin una pregunta" in texto
+
+    def test_pide_reaccionar_antes_de_informar(self):
+        assert "reacciona antes de contestar" in construir().lower()
+
+    def test_pide_ofrecer_informacion_no_pedida(self):
+        assert "ofrece informacion que no te pidieron" in construir().lower()
+
+    def test_pide_tener_opiniones(self):
+        """Un vendedor que dice que si a todo aburre."""
+        assert "opiniones" in construir().lower()
+
+    def test_muestra_ejemplos_de_lo_que_NO_hay_que_hacer(self):
+        """Describir el error no alcanza: hay que mostrarlo."""
+        texto = construir()
+        assert "Asi NO hablas" in texto
+        assert "colgado" in texto
 
 
-def test_el_prompt_prohibe_inventar_datos():
-    texto = construir().lower()
-    assert "invent" in texto
+class TestEntregaPorMotor:
+    def test_el_pipeline_recibe_reglas_de_puntuacion(self):
+        """El TTS lee literal: la puntuacion es su partitura."""
+        p = construir(motor="pipeline")
+        assert ENTREGA_PIPELINE in p
+        assert "24/7" in p, "Tiene que nombrar el caso concreto que fallo"
+        assert "veinticuatro horas" in p
+
+    @pytest.mark.parametrize("motor", ["gemini", "openai"])
+    def test_los_live_reciben_reglas_de_actitud(self, motor):
+        """Generan el habla: la puntuacion no les dice nada."""
+        p = construir(motor=motor)
+        assert ENTREGA_LIVE in p
+        assert "puntuacion" not in p.lower().split("no pienses en puntuacion")[-1][:200]
+
+    def test_los_live_no_reciben_las_reglas_de_texto_del_pipeline(self):
+        assert ENTREGA_PIPELINE not in construir(motor="gemini")
+
+    def test_un_motor_desconocido_cae_al_pipeline(self):
+        """Nunca sin reglas de entrega: seria peor que las equivocadas."""
+        assert ENTREGA_PIPELINE in construir(motor="inventado")
 
 
-def test_el_prompt_prohibe_lo_que_el_tts_pronuncia_mal():
-    """Fish leyo '24/7' como '24 septimo'. La voz lee literal lo que se escribe."""
-    texto = construir()
-    assert "24/7" in texto, "Tiene que nombrar el caso concreto, no dar una regla vaga"
-    assert "veinticuatro horas" in texto
+class TestCanal:
+    def test_la_web_avisa_que_lo_pueden_interrumpir(self):
+        assert "interrumpir" in construir(canal="web").lower()
+
+    @pytest.mark.parametrize("canal", ["whatsapp", "telegram"])
+    def test_mensajeria_avisa_que_no_hay_interrupcion(self, canal):
+        assert "no hay interrupcion" in construir(canal=canal).lower()
+
+    def test_mensajeria_avisa_que_puede_pasar_tiempo(self):
+        """En WhatsApp el visitante puede volver a los tres dias."""
+        assert "puede pasar tiempo" in construir(canal="whatsapp").lower()
 
 
-def test_el_prompt_pide_energia():
-    """Sin esto el LLM escribe frases planas y Fish las dice planas."""
-    texto = construir().lower()
-    assert "energia" in texto or "entusiasta" in texto
+class TestComposicion:
+    def test_las_cuatro_capas_estan_presentes(self):
+        p = construir(motor="pipeline", canal="web")
+        assert IDENTIDAD in p
+        assert ENTREGA_PIPELINE in p
+        assert "interrumpir" in p
+        assert "Asi hablas vos" in p
 
+    def test_acepta_contexto_de_sesion(self):
+        p = construir(contexto_extra="El visitante viene de Instagram.")
+        assert "Instagram" in p
 
-def test_el_prompt_habilita_los_signos_de_exclamacion():
-    """La puntuacion es la partitura del TTS: sin exclamaciones la voz no sube."""
-    texto = construir()
-    assert "exclamacion" in texto.lower()
-    assert "¡" in texto, "Tiene que mostrar el signo, no solo nombrarlo"
+    def test_no_agrega_ruido_si_no_hay_contexto(self):
+        assert "Contexto de esta conversacion" not in construir()
 
-
-def test_el_prompt_define_la_naturalidad_como_conductas_observables():
-    """LiveKit: "friendly" no le dice nada al modelo; "arranca frases con Y"
-    si. La personalidad se define por lo que se escucha, no por adjetivos."""
-    texto = construir().lower()
-    assert "muletillas" in texto
-    assert "gramatica" in texto or "gramática" in texto
-    assert "alterna" in texto, "Tiene que pedir largo de frase variado"
-
-
-def test_el_prompt_da_ejemplos_de_como_hablar():
-    """Describir el tono no alcanza: el modelo copia mejor de un ejemplo."""
-    texto = construir().lower()
-    assert "asi hablas vos" in texto
-    assert "asi no hablas" in texto
-
-
-def test_el_prompt_es_compacto():
-    """El costo por conversacion sube con cada token del system prompt."""
-    assert len(construir()) < 2200, "El prompt fijo crecio demasiado"
-
-
-def test_construir_permite_agregar_contexto():
-    texto = construir("El visitante viene de la campana de Instagram.")
-    assert "Instagram" in texto
-    assert PROMPT_QUANTUMHIVE in texto
+    def test_sigue_siendo_compacto(self):
+        """Cada token del system prompt se paga en cada turno."""
+        for motor in ("pipeline", "gemini", "openai"):
+            largo = len(construir(motor=motor))
+            assert largo < 3200, f"{motor}: {largo} caracteres, crecio demasiado"
