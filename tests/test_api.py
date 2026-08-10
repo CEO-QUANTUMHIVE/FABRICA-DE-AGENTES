@@ -11,6 +11,8 @@ import pytest
 from motor_voz.api import niveles
 from motor_voz.api.limites import LimiteAlcanzado, Limitador
 from motor_voz.api.servidor import crear_app
+from motor_voz.brain.tenants.modelos import PerfilTenant, Tenant
+from motor_voz.brain.tenants.repositorio import TenantNoEncontrado
 from motor_voz.config import cargar
 from motor_voz.voice import motores
 
@@ -22,11 +24,27 @@ ENTORNO = {
     "LIVEKIT_API_SECRET": "secreto-largo-de-prueba-1234567890",
 }
 
+TENANT_DE_PRUEBA = Tenant(
+    id="tenant-1", slug="quantumhive", nombre="QuantumHive", idioma="es",
+    perfil=PerfilTenant(slug="receptor", nombre="Receptor", prompt_base="Identidad de prueba."),
+    prompt_propio="", servicios=(), voz=None,
+)
+
+
+async def _tenant_falso(config, slug):
+    """El tenant se inyecta para que la suite no dependa de Supabase."""
+    if slug != TENANT_DE_PRUEBA.slug:
+        raise TenantNoEncontrado(f"no existe el tenant '{slug}'")
+    return TENANT_DE_PRUEBA
+
 
 @pytest.fixture
 def cliente(aiohttp_client):
     async def _crear(**extra):
-        return await aiohttp_client(crear_app(cargar(ENTORNO | extra)))
+        obtener_tenant = extra.pop("obtener_tenant", _tenant_falso)
+        return await aiohttp_client(
+            crear_app(cargar(ENTORNO | extra), obtener_tenant=obtener_tenant)
+        )
     return _crear
 
 
@@ -109,7 +127,9 @@ class TestEndpoints:
         c = await cliente()
         for nivel, motor in [(1, "pipeline"), (2, "gemini"), (3, "openai")]:
             d = await (await c.post("/api/token", json={"nivel": nivel})).json()
-            assert d["sala"].startswith(f"demo-{motor}-")
+            # demo-<tenant>-<motor>-<voz>-<aleatorio>
+            assert d["sala"].startswith(f"demo-quantumhive-{motor}-")
+            assert d["sala"].split("-")[3] == d["voz"]
 
     async def test_cada_sesion_usa_una_sala_distinta(self, cliente):
         c = await cliente()
@@ -211,4 +231,42 @@ class TestVoces:
         assert r.status == 200
         assert d["voz"] == ""
         assert d["nombre_voz"] == ""
-        assert d["sala"].startswith("demo-pipeline--")
+        assert d["sala"].startswith("demo-quantumhive-pipeline--")
+
+
+class TestTenant:
+    """El tenant se resuelve en el backend y viaja firmado, como el motor."""
+
+    async def test_por_defecto_usa_quantumhive(self, cliente):
+        c = await cliente()
+        d = await (await c.post("/api/token", json={"nivel": 1})).json()
+        assert d["tenant"] == "quantumhive"
+
+    async def test_tenant_inexistente_da_404(self, cliente):
+        c = await cliente()
+        r = await c.post("/api/token", json={"nivel": 1, "tenant": "no-existe"})
+        assert r.status == 404
+
+    async def test_supabase_caido_da_503_no_500(self, cliente):
+        """Que se caiga la base no es culpa del que pide: 503 e invita a reintentar."""
+
+        async def _falla(config, slug):
+            raise RuntimeError("timeout de red")
+
+        c = await cliente(obtener_tenant=_falla)
+        r = await c.post("/api/token", json={"nivel": 1})
+        assert r.status == 503
+
+    async def test_el_tenant_va_en_la_metadata_firmada(self, cliente):
+        """El agente lo lee de aca, no de lo que diga el navegador."""
+        import base64
+        import json as jsonlib
+
+        c = await cliente()
+        d = await (await c.post("/api/token", json={"nivel": 1})).json()
+        payload = d["token"].split(".")[1]
+        while len(payload) % 4:
+            payload += "="
+        claims = jsonlib.loads(base64.urlsafe_b64decode(payload))
+        metadata = jsonlib.loads(claims["metadata"])
+        assert metadata["tenant"] == "quantumhive"

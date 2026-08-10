@@ -22,7 +22,9 @@ from livekit.agents import (
     room_io,
 )
 
-from motor_voz.brain.prompt import construir
+from motor_voz.brain.contexto import construir_contexto
+from motor_voz.brain.tenants import repositorio
+from motor_voz.brain.tenants.resolver import tenant_de_la_sala
 from motor_voz.config import cargar
 from motor_voz.voice import motores
 from motor_voz.voice.transformaciones import normalizar_para_voz
@@ -31,10 +33,15 @@ logger = logging.getLogger("motor-voz")
 
 
 class Receptor(Agent):
-    """Agente receptor de QuantumHive."""
+    """Agente receptor de un tenant.
 
-    def __init__(self, motor: str) -> None:
-        super().__init__(instructions=construir(motor=motor, canal="web"))
+    Recibe el prompt ya armado en vez de armarlo: quien lo arma es
+    brain/contexto.py, que sabe del tenant. Este archivo sigue sin tener
+    logica de negocio.
+    """
+
+    def __init__(self, instructions: str) -> None:
+        super().__init__(instructions=instructions)
 
     async def on_enter(self) -> None:
         self.session.generate_reply(
@@ -44,19 +51,23 @@ class Receptor(Agent):
 
 
 def motor_de_la_sala(nombre: str, por_defecto: str) -> str:
-    """Extrae el motor del nombre de sala `demo-<motor>-<voz>-<aleatorio>`.
+    """Extrae el motor de `demo-<tenant>-<motor>-<voz>-<aleatorio>`.
 
-    Si el nombre no sigue ese formato — una sala creada a mano, por ejemplo —
-    se usa el motor de la configuracion.
+    El tenant entro adelante, asi que el motor se corrio un lugar a la
+    derecha. Los slugs de tenant no llevan guiones (`demo_capilar` usa
+    guion bajo), asi que partir por `-` sigue siendo seguro.
+
+    Si el nombre no sigue ese formato — una sala creada a mano, o una del
+    formato viejo sin tenant — se usa el motor de la configuracion.
     """
     partes = nombre.split("-")
-    if len(partes) >= 3 and partes[0] == "demo" and partes[1] in motores.MOTORES:
-        return partes[1]
+    if len(partes) >= 5 and partes[0] == "demo" and partes[2] in motores.MOTORES:
+        return partes[2]
     return por_defecto
 
 
 def voz_de_la_sala(nombre: str, motor: str, por_defecto: str) -> str:
-    """Extrae la voz del nombre de sala `demo-<motor>-<voz>-<aleatorio>`.
+    """Extrae la voz de `demo-<tenant>-<motor>-<voz>-<aleatorio>`.
 
     Se valida contra el catalogo real del motor YA resuelto (no contra el
     de otro motor): un nombre de sala armado a mano no puede pedirle a la
@@ -66,8 +77,8 @@ def voz_de_la_sala(nombre: str, motor: str, por_defecto: str) -> str:
     """
     catalogo, _ = motores.catalogo_de_voces(motor)
     partes = nombre.split("-")
-    if len(partes) >= 4 and partes[0] == "demo" and partes[2] in catalogo:
-        return partes[2]
+    if len(partes) >= 5 and partes[0] == "demo" and partes[3] in catalogo:
+        return partes[3]
     return por_defecto
 
 
@@ -117,16 +128,28 @@ async def entrypoint(ctx: JobContext) -> None:
         gemini_voice=gemini_voice,
         openai_voice=openai_voice,
     )
-    ctx.log_context_fields = {"room": ctx.room.name, "motor": config.motor}
+    # El tenant tambien viaja en el nombre de sala, adelante del motor. De el
+    # salen las dos cosas que hacen que un cliente suene como el mismo: con
+    # que voz habla el agente, y quien dice ser.
+    tenant = await repositorio.obtener_tenant(config, tenant_de_la_sala(ctx.room.name))
+    voice_id_override = tenant.voz.voice_id if tenant.voz else ""
+
+    ctx.log_context_fields = {
+        "room": ctx.room.name,
+        "motor": config.motor,
+        "tenant": tenant.slug,
+    }
 
     # Se imprime la config al arrancar cada sesion: sin esto no hay forma de
     # saber a simple vista si el worker esta corriendo el codigo nuevo o
     # quedo con el viejo porque no se reinicio.
     logger.info(
-        "sesion nueva | plan=%s motor=%s | voz=%s speed=%s temp=%s | voz_gemini=%s voz_openai=%s",
+        "sesion nueva | tenant=%s plan=%s motor=%s | voz=%s speed=%s temp=%s "
+        "| voz_gemini=%s voz_openai=%s",
+        tenant.slug,
         motores.PLANES.get(config.motor, "?"),
         config.motor,
-        config.fish_voice_id[:12] or "(default)",
+        (voice_id_override or config.fish_voice_id)[:12] or "(default)",
         config.fish_speed,
         config.fish_temperature,
         config.gemini_voice,
@@ -165,7 +188,9 @@ async def entrypoint(ctx: JobContext) -> None:
         }
     }
 
-    session: AgentSession = AgentSession(**motores.componentes(config), **extras)
+    session: AgentSession = AgentSession(
+        **motores.componentes(config, voice_id_override), **extras
+    )
 
     @session.on("metrics_collected")
     def _metricas(ev: MetricsCollectedEvent) -> None:
@@ -176,8 +201,9 @@ async def entrypoint(ctx: JobContext) -> None:
 
     ctx.add_shutdown_callback(registrar_uso)
 
+    prompt = construir_contexto(tenant, motor=config.motor, canal="web")
     await session.start(
-        agent=Receptor(config.motor),
+        agent=Receptor(prompt),
         room=ctx.room,
         room_options=room_io.RoomOptions(),
     )

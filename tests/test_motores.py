@@ -149,22 +149,55 @@ class TestCatalogoDeVoces:
 
 
 class TestVozDeLaSala:
+    """Formato: demo-<tenant>-<motor>-<voz>-<aleatorio>."""
+
     def test_extrae_la_voz_de_gemini(self):
-        assert agente.voz_de_la_sala("demo-gemini-Charon-ab12cd", "gemini", "x") == "Charon"
+        assert (
+            agente.voz_de_la_sala("demo-quantumhive-gemini-Charon-ab12cd", "gemini", "x")
+            == "Charon"
+        )
 
     def test_extrae_la_voz_de_openai(self):
-        assert agente.voz_de_la_sala("demo-openai-coral-ab12cd", "openai", "x") == "coral"
+        assert (
+            agente.voz_de_la_sala("demo-quantumhive-openai-coral-ab12cd", "openai", "x")
+            == "coral"
+        )
 
     def test_no_cruza_una_voz_de_gemini_en_una_sala_de_openai(self):
         """Un nombre de sala armado a mano no le puede pedir a OpenAI una voz
         que es de Gemini."""
-        assert agente.voz_de_la_sala("demo-openai-Puck-ab12cd", "openai", "marin") == "marin"
+        assert (
+            agente.voz_de_la_sala("demo-quantumhive-openai-Puck-ab12cd", "openai", "marin")
+            == "marin"
+        )
 
     def test_el_pipeline_cae_siempre_al_default(self):
-        assert agente.voz_de_la_sala("demo-pipeline--ab12cd", "pipeline", "") == ""
+        assert agente.voz_de_la_sala("demo-quantumhive-pipeline--ab12cd", "pipeline", "") == ""
+
+    def test_un_slug_con_guion_bajo_no_rompe_el_parseo(self):
+        """Los slugs usan guion bajo justamente para que partir por - sea seguro."""
+        assert (
+            agente.voz_de_la_sala("demo-demo_capilar-gemini-Leda-ab12cd", "gemini", "x") == "Leda"
+        )
+
+    def test_el_formato_viejo_sin_tenant_cae_al_default(self):
+        """Una sala de antes de la Fase 8 no se interpreta mal: cae al default."""
+        assert agente.voz_de_la_sala("demo-gemini-Charon-ab12cd", "gemini", "Puck") == "Puck"
 
     def test_un_nombre_mal_formado_cae_al_default(self):
         assert agente.voz_de_la_sala("sala-manual", "gemini", "Puck") == "Puck"
+
+
+class TestMotorDeLaSala:
+    def test_extrae_el_motor(self):
+        assert agente.motor_de_la_sala("demo-quantumhive-gemini-Leda-ab12cd", "pipeline") == "gemini"
+
+    def test_un_motor_inventado_cae_al_de_config(self):
+        """Nadie se cuela a un plan mas caro armando el nombre de sala."""
+        assert agente.motor_de_la_sala("demo-quantumhive-chatgpt-x-ab12cd", "pipeline") == "pipeline"
+
+    def test_el_formato_viejo_cae_al_de_config(self):
+        assert agente.motor_de_la_sala("demo-gemini-Leda-ab12cd", "pipeline") == "pipeline"
 
 
 class TestVozDelTenant:
