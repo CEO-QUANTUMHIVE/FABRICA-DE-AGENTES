@@ -374,19 +374,41 @@ button:disabled {
   border-radius: 50%;
 }
 
-/* Los dos aros son ANILLOS, no discos: el centro va transparente para que
-   la energia se vea salir del borde del logo en vez de taparlo. */
-.orbe__vida-aro--verde {
+/* Ondas: cada una nace pegada al borde del logo y se expande hacia
+   afuera desvaneciendose. Con tres escalonadas la emision se ve continua
+   — es energia saliendo, no un anillo fijo titilando. */
+.orbe__onda {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
   background: radial-gradient(
     circle,
-    rgba(79, 220, 150, 0) 46%,
-    rgba(79, 220, 150, 0.45) 62%,
-    rgba(79, 220, 150, 0.12) 76%,
-    rgba(79, 220, 150, 0) 86%
+    rgba(79, 220, 150, 0) 40%,
+    rgba(120, 235, 200, 0.5) 52%,
+    rgba(79, 220, 150, 0.16) 62%,
+    rgba(79, 220, 150, 0) 72%
   );
-  animation: qh-respirar 2.2s ease-in-out infinite;
+  opacity: 0;
+  animation: qh-irradiar 2.7s ease-out infinite;
+  animation-delay: calc(var(--i) * 0.9s);
 }
 
+@keyframes qh-irradiar {
+  0% {
+    transform: scale(0.6);
+    opacity: 0;
+  }
+  18% {
+    opacity: 0.85;
+  }
+  100% {
+    transform: scale(1.45);
+    opacity: 0;
+  }
+}
+
+/* El resplandor de donde sale todo: pegado al borde del logo, girando
+   despacio. No se expande — es la fuente, no la onda. */
 .orbe__vida-aro--energia {
   background: conic-gradient(
     from 0deg,
@@ -394,10 +416,10 @@ button:disabled {
     rgba(64, 220, 220, 0.45),
     rgba(151, 92, 255, 0.45)
   );
-  filter: blur(7px);
-  opacity: 0.55;
-  -webkit-mask: radial-gradient(circle, transparent 48%, #000 62%, #000 80%, transparent 92%);
-  mask: radial-gradient(circle, transparent 48%, #000 62%, #000 80%, transparent 92%);
+  filter: blur(9px);
+  opacity: 0.5;
+  -webkit-mask: radial-gradient(circle, transparent 38%, #000 48%, transparent 62%);
+  mask: radial-gradient(circle, transparent 38%, #000 48%, transparent 62%);
   animation: qh-girar-aro 5s linear infinite;
 }
 
@@ -413,18 +435,6 @@ button:disabled {
   opacity: 0;
   animation: qh-chispa 2.4s ease-in-out infinite;
   animation-delay: calc(var(--i) * 0.32s);
-}
-
-@keyframes qh-respirar {
-  0%,
-  100% {
-    transform: scale(0.9);
-    opacity: 0.5;
-  }
-  50% {
-    transform: scale(1.15);
-    opacity: 0.95;
-  }
 }
 
 @keyframes qh-girar-aro {
