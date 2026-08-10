@@ -75,6 +75,8 @@ class Config:
     azure_endpoint: str
     azure_deployment: str
     azure_api_key: str
+    supabase_url: str
+    supabase_service_role_key: str
 
 
 def cargar(entorno: dict[str, str] | None = None) -> Config:
@@ -120,4 +122,6 @@ def cargar(entorno: dict[str, str] | None = None) -> Config:
         azure_endpoint=e.get("AZURE_OPENAI_ENDPOINT", ""),
         azure_deployment=e.get("AZURE_OPENAI_DEPLOYMENT", ""),
         azure_api_key=e.get("AZURE_OPENAI_API_KEY", ""),
+        supabase_url=e.get("SUPABASE_URL", "").strip(),
+        supabase_service_role_key=e.get("SUPABASE_SERVICE_ROLE_KEY", "").strip(),
     )

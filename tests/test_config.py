@@ -56,3 +56,20 @@ def test_la_config_es_inmutable():
     config = cargar(ENTORNO_COMPLETO)
     with pytest.raises(Exception):
         config.groq_api_key = "otra"  # type: ignore[misc]
+
+
+def test_carga_los_campos_de_supabase():
+    entorno = ENTORNO_COMPLETO | {
+        "SUPABASE_URL": "https://xyz.supabase.co",
+        "SUPABASE_SERVICE_ROLE_KEY": "clave-falsa",
+    }
+    config = cargar(entorno)
+    assert config.supabase_url == "https://xyz.supabase.co"
+    assert config.supabase_service_role_key == "clave-falsa"
+
+
+def test_supabase_es_opcional_y_default_vacio():
+    """Las fases 0-4 no necesitan Supabase: no puede romper lo que ya anda."""
+    config = cargar(ENTORNO_COMPLETO)
+    assert config.supabase_url == ""
+    assert config.supabase_service_role_key == ""

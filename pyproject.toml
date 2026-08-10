@@ -7,6 +7,7 @@ dependencies = [
     "livekit-agents[fishaudio,google,groq,silero]~=1.6",
     "livekit-api>=1.0",
     "python-dotenv>=1.0",
+    "supabase>=2.9,<3",
 ]
 
 [dependency-groups]
@@ -29,5 +30,6 @@ pythonpath = ["src"]
 asyncio_mode = "auto"
 markers = [
     "smoke: llama APIs reales y consume creditos. No corre por defecto.",
+    "integracion: requiere Supabase real (sin costo, pero si red). No corre por defecto.",
 ]
-addopts = "-m 'not smoke'"
+addopts = "-m 'not smoke and not integracion'"
