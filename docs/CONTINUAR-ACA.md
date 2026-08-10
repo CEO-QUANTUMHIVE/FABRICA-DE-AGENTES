@@ -132,11 +132,47 @@ ya tenía el rol IAM correcto (`roles/aiplatform.user`) desde el vamos — el
 IAM nunca fue el problema, el scope de la instancia sí lo hubiera sido para
 cualquier otra llamada a una API de Google Cloud desde esa VM.
 
-### 3.3 Nivel 3 (OpenAI) — bloqueado
+### 3.3 Nivel 3 (OpenAI) — bloqueado, esperando a Sergio
 
-Falta que Sergio cree un recurso de **Azure OpenAI** con un deployment del
-modelo realtime. Hasta entonces ese nivel falla con un mensaje claro
-diciendo qué variable falta. El código está listo.
+El código está listo: `voice/motores.py:_openai` ya sabe hablar con Azure.
+Lo que falta son datos que solo salen del portal de Azure.
+
+**Estado real (verificado el 2026-08-09 leyendo el `.env`):**
+
+```
+AZURE_OPENAI_API_KEY       cargada
+AZURE_OPENAI_ENDPOINT      VACIA   ← sin esto no hay a donde conectarse
+AZURE_OPENAI_DEPLOYMENT    VACIA   ← ni que modelo usar
+```
+
+O sea: hay una clave, pero no el recurso. Una clave sin endpoint no sirve.
+
+**Pasos para desbloquearlo** (portal de Azure, `portal.azure.com`):
+
+1. **Crear el recurso.** Buscar "Azure OpenAI" → Crear. Elegir la
+   suscripción con los créditos. En región, **elegir una que tenga
+   modelos Realtime** — no todas las tienen, y es el error más común:
+   el recurso se crea igual y recién al buscar el modelo se descubre que
+   ahí no está. `East US 2` y `Sweden Central` son las habituales;
+   confirmar en la tabla de disponibilidad de la doc de Azure antes de
+   elegir, porque cambia seguido.
+2. **Crear el deployment.** Entrar al recurso → Azure AI Foundry / Model
+   deployments → Deploy model. Buscar un modelo **realtime** (family
+   `gpt-realtime` / `gpt-4o-realtime-preview`). El **nombre del
+   deployment lo elegís vos** — anotalo tal cual, con mayúsculas y
+   guiones, porque es lo que va en `AZURE_OPENAI_DEPLOYMENT`.
+3. **Copiar los tres datos** de "Keys and Endpoint" del recurso:
+   endpoint (`https://<nombre>.openai.azure.com/`), una de las dos
+   claves, y el nombre del deployment del paso 2.
+4. **Pasármelos.** Yo los subo a Secret Manager (`motor-voz-azure-*`,
+   mismo patrón que las otras), los cableo en el `.env` de la VM,
+   reinicio el agente y lo pruebo en vivo.
+5. **Sacar el candado del widget.** En `frontend/widget/app.js`,
+   `NIVELES_LISTOS` pasa de `new Set([1, 2])` a `new Set([1, 2, 3])`, y
+   el botón "Realismo extremo" deja de decir "Pronto".
+
+Hasta entonces el nivel 3 se ve en el selector pero avisa que no está
+disponible, en vez de intentar conectar y fallar.
 
 ### 3.4 Servir el widget
 
