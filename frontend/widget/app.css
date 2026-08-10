@@ -33,6 +33,13 @@
   box-sizing: border-box;
 }
 
+/* `hidden` lo pisa cualquier `display` de autor — y `.orbe__voces` es
+   `display: grid`, asi que el menu quedaba visible siempre y el toggle no
+   hacia nada. Esta regla le devuelve el poder al atributo. */
+[hidden] {
+  display: none !important;
+}
+
 html,
 body,
 #root {
@@ -97,23 +104,38 @@ button:disabled {
     0 0 24px rgba(212, 175, 55, 0.35);
 }
 
+/* El angulo se registra como propiedad animable. Sin esto no se puede
+   interpolar un conic-gradient, y la unica salida seria rotar el elemento
+   con `transform` — que hace girar la caja entera en vez del reflejo.
+   Donde @property no exista, el borde queda dorado fijo: se degrada bien. */
+@property --qh-angulo {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+
 .orbe--abierto::before {
   content: '';
   position: absolute;
   inset: 0;
   border-radius: inherit;
   padding: 1.5px;
+  /* Casi todo el marco es oro parejo; el reflejo claro ocupa un tramo
+     corto y lo recorre despacio. Eso es lo que lee como metal. */
   background: conic-gradient(
-    from 0deg,
-    #6b5a1f 0%,
-    #d4af37 12%,
-    #fff3c4 20%,
-    #d4af37 28%,
-    #6b5a1f 45%,
-    #8a7328 60%,
-    #ffe9a3 72%,
+    from var(--qh-angulo),
+    #8a7328 0%,
+    #8a7328 14%,
+    #d4af37 20%,
+    #f3e0a8 25%,
+    #d4af37 30%,
+    #8a7328 38%,
+    #8a7328 64%,
+    #d4af37 70%,
+    #f3e0a8 75%,
     #d4af37 80%,
-    #6b5a1f 100%
+    #8a7328 88%,
+    #8a7328 100%
   );
   /* La mascara deja ver el gradiente solo en el anillo del padding: es lo
      que lo convierte en "borde" en vez de un fondo. */
@@ -125,13 +147,13 @@ button:disabled {
     linear-gradient(#000 0 0) content-box,
     linear-gradient(#000 0 0);
   mask-composite: exclude;
-  animation: qh-borde-metal 6s linear infinite;
+  animation: qh-brillo-borde 9s linear infinite;
   pointer-events: none;
 }
 
-@keyframes qh-borde-metal {
+@keyframes qh-brillo-borde {
   to {
-    transform: rotate(360deg);
+    --qh-angulo: 360deg;
   }
 }
 
@@ -202,6 +224,10 @@ button:disabled {
   opacity: 0.85;
   filter: drop-shadow(0 0 0 transparent);
   transition: filter 200ms ease, opacity 200ms ease, transform 200ms ease;
+  /* Adelante del halo: la capa de vida va en el DOM despues del <img>, y
+     sin esto le pintaba encima y lo tapaba. */
+  position: relative;
+  z-index: 1;
 }
 
 /* Cartel de invitacion: solo con el orbe colapsado. No esta en el
@@ -334,6 +360,8 @@ button:disabled {
   position: absolute;
   inset: -22px;
   pointer-events: none;
+  /* Detras del logo, no encima. */
+  z-index: 0;
 }
 
 .orbe--abierto .orbe__vida {
@@ -346,8 +374,16 @@ button:disabled {
   border-radius: 50%;
 }
 
+/* Los dos aros son ANILLOS, no discos: el centro va transparente para que
+   la energia se vea salir del borde del logo en vez de taparlo. */
 .orbe__vida-aro--verde {
-  background: radial-gradient(circle, rgba(79, 220, 150, 0.55) 0%, rgba(79, 220, 150, 0) 68%);
+  background: radial-gradient(
+    circle,
+    rgba(79, 220, 150, 0) 46%,
+    rgba(79, 220, 150, 0.45) 62%,
+    rgba(79, 220, 150, 0.12) 76%,
+    rgba(79, 220, 150, 0) 86%
+  );
   animation: qh-respirar 2.2s ease-in-out infinite;
 }
 
@@ -359,7 +395,9 @@ button:disabled {
     rgba(151, 92, 255, 0.45)
   );
   filter: blur(7px);
-  opacity: 0.6;
+  opacity: 0.55;
+  -webkit-mask: radial-gradient(circle, transparent 48%, #000 62%, #000 80%, transparent 92%);
+  mask: radial-gradient(circle, transparent 48%, #000 62%, #000 80%, transparent 92%);
   animation: qh-girar-aro 5s linear infinite;
 }
 
