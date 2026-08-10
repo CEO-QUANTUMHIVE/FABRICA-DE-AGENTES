@@ -2,7 +2,7 @@
 
     GET  /api/salud          estado del servicio
     GET  /api/niveles        los tres niveles, para dibujar el selector
-    GET  /api/voces-gemini   las voces del motor gemini, para el nivel "voz humana"
+    GET  /api/voces          catalogo de voces del motor pedido (?motor=gemini|openai)
     POST /api/token          {"nivel": 1|2|3, "voz"?: "Puck"|...} -> token de LiveKit
 
 El nivel y la voz viajan FIRMADOS dentro del token, en la metadata del
@@ -25,7 +25,7 @@ from livekit import api
 from motor_voz.api import niveles as catalogo_niveles
 from motor_voz.api.limites import LimiteAlcanzado, Limitador
 from motor_voz.config import Config, cargar
-from motor_voz.voice.motores import VOCES_GEMINI, VOZ_GEMINI_POR_DEFECTO
+from motor_voz.voice.motores import catalogo_de_voces
 
 logger = logging.getLogger("motor-voz.api")
 ORIGENES_PERMITIDOS = "*"  # la demo es publica; en produccion, el dominio propio
@@ -54,10 +54,12 @@ async def listar_niveles(peticion: web.Request) -> web.Response:
     return _cors(web.json_response({"niveles": catalogo_niveles.catalogo()}))
 
 
-async def listar_voces_gemini(peticion: web.Request) -> web.Response:
+async def listar_voces(peticion: web.Request) -> web.Response:
+    motor = peticion.rel_url.query.get("motor", "gemini")
+    catalogo, _ = catalogo_de_voces(motor)
     return _cors(
         web.json_response(
-            {"voces": [{"voz": clave, "nombre": nombre} for clave, nombre in VOCES_GEMINI.items()]}
+            {"voces": [{"voz": clave, "nombre": nombre} for clave, nombre in catalogo.items()]}
         )
     )
 
@@ -76,16 +78,24 @@ async def emitir_token(peticion: web.Request) -> web.Response:
     except catalogo_niveles.NivelInvalido as e:
         return _cors(web.json_response({"error": str(e)}, status=400))
 
-    # La voz solo tiene sentido en el motor gemini; en los otros se ignora.
-    # Igual que el motor, viaja firmada adentro del nombre de sala: el
-    # navegador no puede pedir una voz que no exista.
-    voz = str(cuerpo.get("voz") or VOZ_GEMINI_POR_DEFECTO)
-    if voz not in VOCES_GEMINI:
-        return _cors(
-            web.json_response(
-                {"error": f"Voz invalida. Validas: {', '.join(VOCES_GEMINI)}"}, status=400
+    # La voz solo tiene sentido en los motores de voz a voz; en el pipeline
+    # se ignora (su voz es la clonada de Fish, por tenant). Igual que el
+    # motor, viaja firmada adentro del nombre de sala: el navegador no puede
+    # pedir una voz que no exista, ni cruzar una voz de un motor con otro.
+    catalogo, voz_por_defecto = catalogo_de_voces(nivel.motor)
+    if not catalogo:
+        # campo vacio (no ausente): asi el nombre de sala mantiene siempre
+        # las mismas posiciones sin importar el motor, y el parser de
+        # agente.py no tiene que ramificar por eso.
+        voz = ""
+    else:
+        voz = str(cuerpo.get("voz") or voz_por_defecto)
+        if voz not in catalogo:
+            return _cors(
+                web.json_response(
+                    {"error": f"Voz invalida. Validas: {', '.join(catalogo)}"}, status=400
+                )
             )
-        )
 
     ip = _ip_de(peticion)
     try:
@@ -123,7 +133,7 @@ async def emitir_token(peticion: web.Request) -> web.Response:
                 "nivel": nivel.numero,
                 "plan": nivel.plan,
                 "voz": voz,
-                "nombre_voz": VOCES_GEMINI[voz],
+                "nombre_voz": catalogo.get(voz, ""),
                 "duracion_maxima_seg": config.max_session_seconds,
             }
         )
@@ -146,7 +156,7 @@ def crear_app(config: Config | None = None) -> web.Application:
         [
             web.get("/api/salud", salud),
             web.get("/api/niveles", listar_niveles),
-            web.get("/api/voces-gemini", listar_voces_gemini),
+            web.get("/api/voces", listar_voces),
             web.post("/api/token", emitir_token),
             web.options("/api/{resto:.*}", preflight),
         ]

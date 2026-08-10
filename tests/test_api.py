@@ -12,6 +12,7 @@ from motor_voz.api import niveles
 from motor_voz.api.limites import LimiteAlcanzado, Limitador
 from motor_voz.api.servidor import crear_app
 from motor_voz.config import cargar
+from motor_voz.voice import motores
 
 ENTORNO = {
     "GROQ_API_KEY": "gsk_falsa",
@@ -152,3 +153,54 @@ class TestEndpoints:
         c = await cliente()
         r = await c.get("/api/niveles")
         assert r.headers.get("Access-Control-Allow-Origin") == "*"
+
+
+class TestVoces:
+    async def test_lista_las_voces_de_gemini(self, cliente):
+        c = await cliente()
+        d = await (await c.get("/api/voces?motor=gemini")).json()
+        assert {v["voz"] for v in d["voces"]} == set(motores.VOCES_GEMINI)
+
+    async def test_lista_las_diez_voces_de_openai(self, cliente):
+        c = await cliente()
+        d = await (await c.get("/api/voces?motor=openai")).json()
+        assert len(d["voces"]) == 10
+        assert all({"voz", "nombre"} <= set(v) for v in d["voces"])
+
+    async def test_el_pipeline_no_tiene_voces_pero_responde_200(self, cliente):
+        """Ni error ni 404: el frontend puede pedir sin fijarse el motor."""
+        c = await cliente()
+        r = await c.get("/api/voces?motor=pipeline")
+        assert r.status == 200
+        assert (await r.json())["voces"] == []
+
+    async def test_sin_parametro_motor_asume_gemini(self, cliente):
+        """Compatibilidad con el selector viejo, que solo conocia gemini."""
+        c = await cliente()
+        d = await (await c.get("/api/voces")).json()
+        assert {v["voz"] for v in d["voces"]} == set(motores.VOCES_GEMINI)
+
+    async def test_pedir_el_nivel_3_con_una_voz_de_gemini_da_400(self, cliente):
+        """Los catalogos de gemini y openai son distintos: no se cruzan."""
+        c = await cliente()
+        r = await c.post("/api/token", json={"nivel": 3, "voz": "Puck"})
+        assert r.status == 400
+
+    async def test_pedir_el_nivel_3_con_una_voz_valida_de_openai_funciona(self, cliente):
+        c = await cliente()
+        r = await c.post("/api/token", json={"nivel": 3, "voz": "coral"})
+        d = await r.json()
+        assert r.status == 200
+        assert d["voz"] == "coral"
+        assert d["nombre_voz"] == motores.VOCES_OPENAI["coral"]
+        assert "-coral-" in d["sala"]
+
+    async def test_el_nivel_1_ignora_la_voz_y_la_deja_vacia(self, cliente):
+        """El pipeline no tiene catalogo: lo que mande el cliente se descarta."""
+        c = await cliente()
+        r = await c.post("/api/token", json={"nivel": 1, "voz": "cualquiera"})
+        d = await r.json()
+        assert r.status == 200
+        assert d["voz"] == ""
+        assert d["nombre_voz"] == ""
+        assert d["sala"].startswith("demo-pipeline--")

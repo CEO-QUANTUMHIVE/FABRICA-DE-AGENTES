@@ -55,16 +55,18 @@ def motor_de_la_sala(nombre: str, por_defecto: str) -> str:
     return por_defecto
 
 
-def voz_de_la_sala(nombre: str, por_defecto: str) -> str:
-    """Extrae la voz de Gemini del nombre de sala `demo-<motor>-<voz>-<aleatorio>`.
+def voz_de_la_sala(nombre: str, motor: str, por_defecto: str) -> str:
+    """Extrae la voz del nombre de sala `demo-<motor>-<voz>-<aleatorio>`.
 
-    Solo importa cuando el motor es gemini; en los demas casos el campo
-    esta igual (servidor.py siempre lo manda) pero no se usa para nada.
-    Se valida contra el catalogo real: un nombre de sala armado a mano no
-    puede pedirle a Vertex una voz que no existe.
+    Se valida contra el catalogo real del motor YA resuelto (no contra el
+    de otro motor): un nombre de sala armado a mano no puede pedirle a la
+    API una voz que no existe, ni colar la voz de un motor en otro. Los
+    motores sin catalogo (pipeline) siempre caen al default, porque
+    servidor.py deja ese campo vacio a proposito.
     """
+    catalogo, _ = motores.catalogo_de_voces(motor)
     partes = nombre.split("-")
-    if len(partes) >= 4 and partes[0] == "demo" and partes[2] in motores.VOCES_GEMINI:
+    if len(partes) >= 4 and partes[0] == "demo" and partes[2] in catalogo:
         return partes[2]
     return por_defecto
 
@@ -98,10 +100,22 @@ async def entrypoint(ctx: JobContext) -> None:
     # el navegador no lo puede falsear: no puede pedir el plan premium por
     # su cuenta.
     base = cargar()
+    motor = motor_de_la_sala(ctx.room.name, base.motor)
+    # La voz vive en un campo de Config distinto por motor (gemini_voice,
+    # openai_voice): cada plugin espera la suya. Solo se pisa el campo del
+    # motor que efectivamente corre esta sesion; el otro se queda con el
+    # default de config.py, aunque no se vaya a usar.
+    gemini_voice = base.gemini_voice
+    openai_voice = base.openai_voice
+    if motor == "gemini":
+        gemini_voice = voz_de_la_sala(ctx.room.name, motor, base.gemini_voice)
+    elif motor == "openai":
+        openai_voice = voz_de_la_sala(ctx.room.name, motor, base.openai_voice)
     config = dataclasses.replace(
         base,
-        motor=motor_de_la_sala(ctx.room.name, base.motor),
-        gemini_voice=voz_de_la_sala(ctx.room.name, base.gemini_voice),
+        motor=motor,
+        gemini_voice=gemini_voice,
+        openai_voice=openai_voice,
     )
     ctx.log_context_fields = {"room": ctx.room.name, "motor": config.motor}
 
@@ -109,13 +123,14 @@ async def entrypoint(ctx: JobContext) -> None:
     # saber a simple vista si el worker esta corriendo el codigo nuevo o
     # quedo con el viejo porque no se reinicio.
     logger.info(
-        "sesion nueva | plan=%s motor=%s | voz=%s speed=%s temp=%s | voz_gemini=%s",
+        "sesion nueva | plan=%s motor=%s | voz=%s speed=%s temp=%s | voz_gemini=%s voz_openai=%s",
         motores.PLANES.get(config.motor, "?"),
         config.motor,
         config.fish_voice_id[:12] or "(default)",
         config.fish_speed,
         config.fish_temperature,
         config.gemini_voice,
+        config.openai_voice,
     )
 
     # Los motores de voz a voz generan el habla directamente: no pasan por

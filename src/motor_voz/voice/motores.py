@@ -68,6 +68,40 @@ VOCES_GEMINI = {
 }
 VOZ_GEMINI_POR_DEFECTO = "Puck"
 
+# Las diez voces de OpenAI Realtime, verificadas contra el SDK instalado
+# (.venv/Lib/site-packages/openai/types/realtime/realtime_audio_config_output.py,
+# el 2026-08-09). A diferencia de Gemini, aca la clave ya es el nombre que
+# entiende la API (todo minuscula, sin nombres de estrellas de por medio),
+# pero el criterio para el catalogo que ve el visitante es el mismo: nombres
+# argentinos, distintos a los de VOCES_GEMINI para no confundir los dos
+# selectores.
+VOCES_OPENAI = {
+    "alloy": "Bruno",
+    "ash": "Facu",
+    "ballad": "Santi",
+    "coral": "Juli",
+    "echo": "Lauti",
+    "sage": "Flor",
+    "shimmer": "Vale",
+    "verse": "Ivo",
+    "marin": "Agus",
+    "cedar": "Caro",
+}
+VOZ_OPENAI_POR_DEFECTO = "marin"  # el default del plugin instalado
+
+
+def catalogo_de_voces(motor: str) -> tuple[dict[str, str], str]:
+    """Catalogo de voces y voz por defecto del motor pedido.
+
+    El pipeline no entra aca: su voz es la clonada de Fish, que se
+    configura por tenant y no se elige de una lista.
+    """
+    if motor == "gemini":
+        return VOCES_GEMINI, VOZ_GEMINI_POR_DEFECTO
+    if motor == "openai":
+        return VOCES_OPENAI, VOZ_OPENAI_POR_DEFECTO
+    return {}, ""
+
 
 class MotorNoDisponible(RuntimeError):
     """El motor pedido existe pero le faltan credenciales para funcionar."""

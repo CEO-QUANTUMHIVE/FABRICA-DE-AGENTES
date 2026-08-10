@@ -7,7 +7,7 @@ opciones correctas y que prefiera los creditos por sobre la tarjeta.
 import pytest
 
 from motor_voz.config import cargar
-from motor_voz.voice import motores
+from motor_voz.voice import agente, motores
 
 BASE = {
     "GROQ_API_KEY": "gsk_falsa",
@@ -110,3 +110,58 @@ class TestPipeline:
         """Es la diferencia de arquitectura: generan el habla directamente."""
         o = motores.opciones_gemini(cargar(BASE | {"GCP_PROJECT": "p"}))
         assert "stt" not in o and "tts" not in o
+
+
+class TestCatalogoDeVoces:
+    """El resto del codigo (servidor.py, agente.py) no debe ramificar por
+    motor: le pide el catalogo a esta funcion y listo."""
+
+    def test_devuelve_el_catalogo_de_gemini(self):
+        catalogo, default = motores.catalogo_de_voces("gemini")
+        assert catalogo == motores.VOCES_GEMINI
+        assert default == motores.VOZ_GEMINI_POR_DEFECTO
+
+    def test_devuelve_el_catalogo_de_openai(self):
+        catalogo, default = motores.catalogo_de_voces("openai")
+        assert catalogo == motores.VOCES_OPENAI
+        assert default == motores.VOZ_OPENAI_POR_DEFECTO
+        assert len(catalogo) == 10
+
+    def test_el_pipeline_no_tiene_catalogo(self):
+        """Su voz es la clonada de Fish, configurada por tenant, no una lista."""
+        assert motores.catalogo_de_voces("pipeline") == ({}, "")
+
+    def test_un_motor_inventado_tampoco_tiene_catalogo(self):
+        assert motores.catalogo_de_voces("chatgpt") == ({}, "")
+
+    def test_las_voces_de_openai_son_las_del_sdk_instalado(self):
+        """Verificadas contra
+        openai/types/realtime/realtime_audio_config_output.py el 2026-08-09."""
+        assert set(motores.VOCES_OPENAI) == {
+            "alloy", "ash", "ballad", "coral", "echo",
+            "sage", "shimmer", "verse", "marin", "cedar",
+        }
+
+    def test_los_nombres_de_openai_no_se_repiten_con_gemini(self):
+        """Si se repitieran, el visitante no podria distinguir de que motor
+        es la voz al ver el nombre solo."""
+        assert set(motores.VOCES_OPENAI.values()).isdisjoint(motores.VOCES_GEMINI.values())
+
+
+class TestVozDeLaSala:
+    def test_extrae_la_voz_de_gemini(self):
+        assert agente.voz_de_la_sala("demo-gemini-Charon-ab12cd", "gemini", "x") == "Charon"
+
+    def test_extrae_la_voz_de_openai(self):
+        assert agente.voz_de_la_sala("demo-openai-coral-ab12cd", "openai", "x") == "coral"
+
+    def test_no_cruza_una_voz_de_gemini_en_una_sala_de_openai(self):
+        """Un nombre de sala armado a mano no le puede pedir a OpenAI una voz
+        que es de Gemini."""
+        assert agente.voz_de_la_sala("demo-openai-Puck-ab12cd", "openai", "marin") == "marin"
+
+    def test_el_pipeline_cae_siempre_al_default(self):
+        assert agente.voz_de_la_sala("demo-pipeline--ab12cd", "pipeline", "") == ""
+
+    def test_un_nombre_mal_formado_cae_al_default(self):
+        assert agente.voz_de_la_sala("sala-manual", "gemini", "Puck") == "Puck"
