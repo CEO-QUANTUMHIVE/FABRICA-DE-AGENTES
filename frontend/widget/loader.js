@@ -19,11 +19,13 @@
   var logo = actual.getAttribute('data-logo') || '';
   var acento = actual.getAttribute('data-acento') || '';
   var acento2 = actual.getAttribute('data-acento-2') || '';
+  var clonar = actual.getAttribute('data-clonar') || '';
 
   var params = new URLSearchParams({ api: origen, tenant: tenant });
   if (logo) params.set('logo', logo);
   if (acento) params.set('acento', acento);
   if (acento2) params.set('acento2', acento2);
+  if (clonar) params.set('clonar', clonar);
 
   // En un celular el panel de 420x640 no entra, y el orbe de 240 tapa
   // media pantalla. Los tamanos se calculan contra el viewport real del

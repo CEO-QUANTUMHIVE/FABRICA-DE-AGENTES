@@ -59,7 +59,12 @@ async def listar_voces(peticion: web.Request) -> web.Response:
     catalogo, _ = catalogo_de_voces(motor)
     return _cors(
         web.json_response(
-            {"voces": [{"voz": clave, "nombre": nombre} for clave, nombre in catalogo.items()]}
+            {
+                "voces": [
+                    {"voz": clave, "nombre": v.nombre, "genero": v.genero}
+                    for clave, v in catalogo.items()
+                ]
+            }
         )
     )
 
@@ -133,7 +138,7 @@ async def emitir_token(peticion: web.Request) -> web.Response:
                 "nivel": nivel.numero,
                 "plan": nivel.plan,
                 "voz": voz,
-                "nombre_voz": catalogo.get(voz, ""),
+                "nombre_voz": catalogo[voz].nombre if voz in catalogo else "",
                 "duracion_maxima_seg": config.max_session_seconds,
             }
         )

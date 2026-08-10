@@ -23,7 +23,7 @@ llega en la config del tenant.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, NamedTuple
 
 # Los tres van arriba, a nivel de modulo, aunque _gemini/_openai los usen
 # recien mas abajo. livekit-agents registra cada plugin la primera vez que
@@ -50,6 +50,17 @@ PLANES = {
     "openai": "premium",
 }
 
+class Voz(NamedTuple):
+    """Una voz del catalogo, como la ve el visitante.
+
+    El genero no es un adorno: el selector agrupa por genero, y esa
+    variedad es parte de lo que se le esta vendiendo al cliente.
+    """
+
+    nombre: str
+    genero: str  # "m" | "f"
+
+
 # Las voces prearmadas que trae Gemini Live (verificado en
 # livekit.plugins.google.realtime.api_proto.Voice, el 2026-08-10). Son
 # nombres de estrellas en ingles, asi que el catalogo que ve el visitante
@@ -59,14 +70,14 @@ PLANES = {
 # criterio en dos lugares. La clave sigue siendo el nombre real: es lo
 # unico que entiende la API de Google.
 VOCES_GEMINI = {
-    "Puck": "Mateo",
-    "Charon": "Joaco",
-    "Fenrir": "Nico",
-    "Orus": "Tomás",
-    "Kore": "Delfi",
-    "Aoede": "Camila",
-    "Leda": "Sofía",
-    "Zephyr": "Mora",
+    "Puck": Voz("Mateo", "m"),
+    "Charon": Voz("Joaco", "m"),
+    "Fenrir": Voz("Nico", "m"),
+    "Orus": Voz("Tomás", "m"),
+    "Kore": Voz("Delfi", "f"),
+    "Aoede": Voz("Camila", "f"),
+    "Leda": Voz("Sofía", "f"),
+    "Zephyr": Voz("Mora", "f"),
 }
 VOZ_GEMINI_POR_DEFECTO = "Puck"
 
@@ -78,21 +89,21 @@ VOZ_GEMINI_POR_DEFECTO = "Puck"
 # argentinos, distintos a los de VOCES_GEMINI para no confundir los dos
 # selectores.
 VOCES_OPENAI = {
-    "alloy": "Bruno",
-    "ash": "Facu",
-    "ballad": "Santi",
-    "coral": "Juli",
-    "echo": "Lauti",
-    "sage": "Flor",
-    "shimmer": "Vale",
-    "verse": "Ivo",
-    "marin": "Agus",
-    "cedar": "Caro",
+    "alloy": Voz("Bruno", "m"),
+    "ash": Voz("Facu", "m"),
+    "ballad": Voz("Santi", "m"),
+    "coral": Voz("Juli", "f"),
+    "echo": Voz("Lauti", "m"),
+    "sage": Voz("Flor", "f"),
+    "shimmer": Voz("Vale", "f"),
+    "verse": Voz("Thiago", "m"),
+    "marin": Voz("Pili", "f"),
+    "cedar": Voz("Caro", "f"),
 }
 VOZ_OPENAI_POR_DEFECTO = "marin"  # el default del plugin instalado
 
 
-def catalogo_de_voces(motor: str) -> tuple[dict[str, str], str]:
+def catalogo_de_voces(motor: str) -> tuple[dict[str, Voz], str]:
     """Catalogo de voces y voz por defecto del motor pedido.
 
     El pipeline no entra aca: su voz es la clonada de Fish, que se

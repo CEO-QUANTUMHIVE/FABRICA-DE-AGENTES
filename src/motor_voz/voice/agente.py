@@ -145,6 +145,26 @@ async def entrypoint(ctx: JobContext) -> None:
             normalizar_para_voz,
         ]
 
+    # Por que se toca la interrupcion:
+    #
+    # El default de livekit-agents es `min_words: 0`, o sea que alcanza UNA
+    # palabra para callar al agente. Y Whisper, cuando le llega ruido o el
+    # propio audio del agente colado por el microfono, no devuelve vacio:
+    # alucina una palabra suelta que suena a algo ("gracias", "subtitulos").
+    # Con el default esa palabra inventada interrumpe al agente y despues lo
+    # hace contestarle a la nada — que es el sintoma de "se escucha a si
+    # mismo y se responde solo".
+    #
+    # Pidiendo dos palabras, un fragmento alucinado ya no alcanza.
+    # `resume_false_interruption` viene prendido de fabrica: si se callo por
+    # una interrupcion que no era, retoma en vez de quedarse mudo.
+    extras["turn_handling"] = {
+        "interruption": {
+            "min_words": int(os.environ.get("AGENTE_PALABRAS_INTERRUPCION", "2")),
+            "min_duration": float(os.environ.get("AGENTE_DURACION_INTERRUPCION", "0.6")),
+        }
+    }
+
     session: AgentSession = AgentSession(**motores.componentes(config), **extras)
 
     @session.on("metrics_collected")

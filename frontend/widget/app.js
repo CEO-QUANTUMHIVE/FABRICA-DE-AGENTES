@@ -15,6 +15,11 @@ const parametros = new URLSearchParams(location.search);
 const API = parametros.get('api') || 'https://voz.quantumhive.com.ar';
 const TENANT = parametros.get('tenant') || 'quantumhive';
 const LOGO = parametros.get('logo') || '';
+// A donde lleva "Cloná tu propia voz". Todavia no existe la fabrica de
+// voces, asi que por defecto cae a la landing; cuando exista, se cambia
+// con data-clonar en el <script> del cliente sin tocar el widget.
+const URL_CLONAR =
+  parametros.get('clonar') || 'https://www.quantumhive.com.ar/#contacto';
 
 const $ = (id) => document.getElementById(id);
 const orbe = $('orbe');
@@ -152,29 +157,60 @@ function mostrarSelectorDeVoces(mostrar) {
 function dibujarVoces() {
   const nombre = voces.find((v) => v.voz === vozElegida)?.nombre ?? '';
   $('voces-resumen-texto').textContent = nombre
-    ? `Elegí quién querés que te atienda: ${nombre}`
+    ? `Elegí quién te atiende · ${nombre}`
     : 'Elegí quién querés que te atienda';
   $('voces-resumen-flecha').textContent = vocesAbierto ? '▴' : '▾';
 
   const cont = $('voces');
   cont.innerHTML = '';
-  for (const v of voces) {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.className = 'orbe__voz-chip';
-    b.setAttribute('role', 'radio');
-    b.dataset.activa = String(v.voz === vozElegida);
-    b.title = `Elegir y escuchar a ${v.nombre}`;
-    b.textContent = v.nombre;
-    b.onclick = () => elegirYProbarVoz(v.voz);
-    cont.append(b);
+
+  // Agrupadas por genero, con su titulo: la variedad de voces es parte de
+  // lo que se vende, y en una grilla sin separar no se lee como variedad.
+  for (const [genero, titulo] of [
+    ['f', 'Mujeres'],
+    ['m', 'Varones'],
+  ]) {
+    const delGrupo = voces.filter((v) => v.genero === genero);
+    if (!delGrupo.length) continue;
+
+    const cabecera = document.createElement('p');
+    cabecera.className = 'orbe__voces-grupo';
+    cabecera.textContent = titulo;
+    cont.append(cabecera);
+
+    const grilla = document.createElement('div');
+    grilla.className = 'orbe__voces-grilla';
+    for (const v of delGrupo) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'orbe__voz-chip';
+      b.setAttribute('role', 'radio');
+      b.dataset.activa = String(v.voz === vozElegida);
+      b.title = `Elegir y escuchar a ${v.nombre}`;
+      b.textContent = v.nombre;
+      b.onclick = () => elegirYProbarVoz(v.voz);
+      grilla.append(b);
+    }
+    cont.append(grilla);
   }
+
+  // La clonacion es el paso siguiente del embudo: el visitante que llega
+  // hasta aca eligiendo voces es justo el que puede querer la suya.
+  const clonar = document.createElement('a');
+  clonar.className = 'orbe__clonar';
+  clonar.href = URL_CLONAR;
+  clonar.target = '_blank';
+  clonar.rel = 'noopener';
+  clonar.textContent = '✨ Cloná tu propia voz';
+  cont.append(clonar);
 }
 
 $('voces-resumen').onclick = () => {
   vocesAbierto = !vocesAbierto;
   $('voces').hidden = !vocesAbierto;
   $('voces-resumen-flecha').textContent = vocesAbierto ? '▴' : '▾';
+  // El CSS apaga el latido de "mirame" una vez que lo abrieron.
+  $('voces-resumen').setAttribute('aria-expanded', String(vocesAbierto));
 };
 
 function elegirYProbarVoz(voz) {

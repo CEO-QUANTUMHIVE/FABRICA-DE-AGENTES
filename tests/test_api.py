@@ -192,7 +192,7 @@ class TestVoces:
         d = await r.json()
         assert r.status == 200
         assert d["voz"] == "coral"
-        assert d["nombre_voz"] == motores.VOCES_OPENAI["coral"]
+        assert d["nombre_voz"] == motores.VOCES_OPENAI["coral"].nombre
         assert "-coral-" in d["sala"]
 
     async def test_el_nivel_1_ignora_la_voz_y_la_deja_vacia(self, cliente):

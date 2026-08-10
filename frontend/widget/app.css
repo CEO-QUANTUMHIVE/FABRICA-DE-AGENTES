@@ -536,9 +536,46 @@ button:disabled {
 /* Voces: nombres para elegir y, al tocarlos, escuchar esa voz al toque. */
 .orbe__voces {
   flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+/* Titulo de cada grupo. La variedad de voces es argumento de venta: sin
+   separar por genero, ocho nombres sueltos no se leen como variedad. */
+.orbe__voces-grupo {
+  margin: 2px 0 0;
+  font-size: 9.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--qh-text-dim);
+}
+
+.orbe__voces-grilla {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 5px;
+}
+
+/* Lleva a la fabrica de voces: el que llego hasta aca probando voces es
+   justo el que puede querer la suya. */
+.orbe__clonar {
+  display: block;
+  margin-top: 4px;
+  padding: 7px 8px;
+  text-align: center;
+  font-size: 11px;
+  font-weight: 600;
+  text-decoration: none;
+  color: var(--qh-gold);
+  border: 1px dashed var(--qh-gold-dim);
+  border-radius: 8px;
+  transition: background 150ms ease, border-color 150ms ease;
+}
+
+.orbe__clonar:hover {
+  background: #1d1a12;
+  border-color: var(--qh-gold);
 }
 
 .orbe__voz-chip {
@@ -571,23 +608,43 @@ button:disabled {
 
 /* Resumen compacto: mismo patron que el selector de pantallas del original,
    reusado para las voces. */
+/* Dorado y con un latido suave, no gris: si no se ve, nadie descubre que
+   hay voces para elegir — y esa variedad es medio argumento de venta. */
 .orbe__fuentes-resumen {
   flex: 0 0 auto;
   width: 100%;
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px;
-  background: var(--qh-black-soft);
-  color: var(--qh-text);
-  border: 1px solid var(--qh-line);
+  padding: 8px 10px;
+  background: linear-gradient(100deg, #1d1a12, #15130d);
+  color: var(--qh-gold);
+  font-weight: 600;
+  border: 1px solid var(--qh-gold-dim);
   border-radius: 8px;
   cursor: pointer;
-  transition: border-color 150ms ease;
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+  animation: qh-llamar 2.6s ease-in-out infinite;
 }
 
 .orbe__fuentes-resumen:hover {
-  border-color: var(--qh-gold-dim);
+  border-color: var(--qh-gold);
+  box-shadow: 0 0 14px rgba(212, 175, 55, 0.35);
+}
+
+/* Se apaga apenas lo abren: ya cumplio su trabajo de llamar la atencion. */
+.orbe__fuentes-resumen[aria-expanded='true'] {
+  animation: none;
+}
+
+@keyframes qh-llamar {
+  0%,
+  100% {
+    box-shadow: 0 0 0 rgba(212, 175, 55, 0);
+  }
+  50% {
+    box-shadow: 0 0 12px rgba(212, 175, 55, 0.3);
+  }
 }
 
 .orbe__fuentes-resumen-texto {
@@ -783,7 +840,7 @@ button:disabled {
   }
 
   /* Ocho chips en cuatro columnas quedan ilegibles en 320px de ancho. */
-  .orbe__voces {
+  .orbe__voces-grilla {
     grid-template-columns: repeat(3, 1fr);
   }
 
@@ -793,6 +850,21 @@ button:disabled {
 
   .orbe__marca-pie {
     font-size: 9px;
+  }
+
+  /* Las dos animaciones caras se apagan en el telefono, que es donde se
+     nota: el brillo del borde repinta un conic-gradient entero en cada
+     frame (animar una @property no se puede componer en la GPU), y el aro
+     de energia lleva un blur mientras gira. Las ondas y el latido del
+     logo se quedan: son transform/opacity, que si van por GPU. */
+  .orbe--abierto::before {
+    animation: none;
+  }
+
+  .orbe__vida-aro--energia {
+    animation: none;
+    filter: none;
+    opacity: 0.35;
   }
 }
 
