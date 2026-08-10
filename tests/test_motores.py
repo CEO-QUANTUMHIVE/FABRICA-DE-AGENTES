@@ -165,3 +165,17 @@ class TestVozDeLaSala:
 
     def test_un_nombre_mal_formado_cae_al_default(self):
         assert agente.voz_de_la_sala("sala-manual", "gemini", "Puck") == "Puck"
+
+
+class TestVozDelTenant:
+    """La voz del tenant llega hasta el TTS sin pasar por Config (spec S8)."""
+
+    def test_componentes_pipeline_propaga_la_voz_del_tenant(self):
+        config = cargar(BASE | {"MOTOR": "pipeline"})
+        comps = motores.componentes(config, voice_id_override="voz-del-tenant")
+        assert comps["tts"].voice_id == "voz-del-tenant"
+
+    def test_componentes_sin_override_usa_la_voz_de_config(self):
+        config = cargar(BASE | {"MOTOR": "pipeline", "FISH_VOICE_ID": "voz-de-config"})
+        comps = motores.componentes(config)
+        assert comps["tts"].voice_id == "voz-de-config"

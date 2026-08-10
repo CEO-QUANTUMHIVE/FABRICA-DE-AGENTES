@@ -135,20 +135,25 @@ class MotorNoDisponible(RuntimeError):
     """El motor pedido existe pero le faltan credenciales para funcionar."""
 
 
-def componentes(config: Config) -> dict[str, Any]:
-    """Devuelve los kwargs de AgentSession del motor configurado."""
+def componentes(config: Config, voice_id_override: str = "") -> dict[str, Any]:
+    """Devuelve los kwargs de AgentSession del motor configurado.
+
+    `voice_id_override` es la voz del tenant ya resuelto (spec S8). Solo
+    el pipeline la usa hoy: Gemini y OpenAI hablan con una voz de catalogo
+    fija (`gemini_voice`/`openai_voice`), no con una voz clonada.
+    """
     if config.motor not in MOTORES:
         raise MotorNoDisponible(
             f"Motor '{config.motor}' desconocido. Validos: {', '.join(MOTORES)}."
         )
-    return _CONSTRUCTORES[config.motor](config)
+    return _CONSTRUCTORES[config.motor](config, voice_id_override)
 
 
-def _pipeline(config: Config) -> dict[str, Any]:
+def _pipeline(config: Config, voice_id_override: str = "") -> dict[str, Any]:
     return {
         "stt": proveedor_stt.crear(config),
         "llm": proveedor_llm.crear(config),
-        "tts": proveedor_tts.crear(config),
+        "tts": proveedor_tts.crear(config, voice_id_override),
         # Groq Whisper no hace endpointing: sin VAD no hay deteccion de turno
         # ni interrupcion. Los defaults de silero (0.55 s de silencio, umbral
         # 0.5) cortan con cualquier ruido de fondo: el agente se callaba
@@ -197,7 +202,10 @@ def opciones_gemini(config: Config) -> dict[str, Any]:
     )
 
 
-def _gemini(config: Config) -> dict[str, Any]:
+def _gemini(config: Config, voice_id_override: str = "") -> dict[str, Any]:
+    # Acepta el override y no lo usa: Gemini habla con una voz de su catalogo,
+    # no con una clonada. El parametro esta para que el despacho por
+    # diccionario siga siendo uniforme entre los tres motores.
     return {"llm": google.beta.realtime.RealtimeModel(**opciones_gemini(config))}
 
 
@@ -233,7 +241,8 @@ def opciones_openai(config: Config) -> dict[str, Any]:
     )
 
 
-def _openai(config: Config) -> dict[str, Any]:
+def _openai(config: Config, voice_id_override: str = "") -> dict[str, Any]:
+    # Mismo criterio que _gemini: la voz sale del catalogo de OpenAI.
     opts = opciones_openai(config)
     if opts.pop("_azure", False):
         return {"llm": openai_realtime.RealtimeModel.with_azure(**opts)}
