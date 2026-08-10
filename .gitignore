@@ -41,6 +41,15 @@ frontend/**/dist/
 cache/
 audio_cache/
 
+# Excepcion: los saludos pregrabados del selector de voces (3.5). No son
+# voces de nadie: son las voces stock de Google y OpenAI, generadas por
+# nosotros, y ya suenan publicamente en el widget — el repo no expone nada
+# que no este al aire. Versionarlas es a proposito: asi desplegar el widget
+# no depende de que quien lo haga tenga las claves de Vertex y de Azure.
+# La voz clonada del fundador (VOZ-003) y cualquier grabacion de una persona
+# real siguen afuera, sin excepcion.
+!frontend/widget/public/assets/muestras/*.mp3
+
 # Las muestras de voz NO se versionan. El repositorio es publico y un wav
 # limpio de la voz de una persona alcanza para clonarla. Cada quien deja
 # su propia grabacion local en tests/fixtures/; los smoke tests la saltean

@@ -41,6 +41,21 @@ TEXTO = "Hola, soy {nombre}, de QuantumHive. ¿En qué te puedo ayudar?"
 # Los dos motores entregan PCM crudo a 24 kHz, mono, 16 bits.
 FRECUENCIA = 24_000
 
+# El TTS de Gemini NO vive donde vive el modelo Live. `GCP_LOCATION` apunta a
+# us-east4, que es donde esta gemini-live-2.5-flash-native-audio, y ahi el TTS
+# no existe: da 404 diciendo "model was not found", que se lee como nombre
+# equivocado y en realidad es la region. Verificado el 2026-08-10 probando las
+# tres regiones: la unica que responde es us-central1. Tampoco sirve el modelo
+# por defecto del plugin (gemini-3.1-flash-tts-preview): no esta habilitado en
+# el proyecto.
+MODELO_GEMINI_TTS = "gemini-2.5-flash-preview-tts"
+REGION_GEMINI_TTS = "us-central1"
+
+# Pedir las ocho de corrido agota la cuota del modelo preview a la septima
+# (RESOURCE_EXHAUSTED). Como esto se corre una vez en la vida, dos segundos
+# entre voces no le molestan a nadie y evitan tener que reintentar.
+PAUSA_ENTRE_VOCES = 2.0
+
 DESTINO = Path(__file__).resolve().parents[1] / "frontend" / "widget" / "public" / "assets" / "muestras"
 
 
@@ -78,14 +93,14 @@ async def _pcm_gemini(clave: str, texto: str) -> bytes:
     # De todo lo que arma `opciones_gemini` (que apunta al modelo Realtime)
     # aca solo sirve como facturar: Vertex para creditos, api_key para
     # tarjeta. El modelo y la voz los pone el TTS.
-    credenciales = {
-        k: v for k, v in opciones.items() if k in ("vertexai", "project", "location", "api_key")
-    }
+    credenciales = {k: v for k, v in opciones.items() if k in ("vertexai", "project", "api_key")}
+    if credenciales.get("vertexai"):
+        credenciales["location"] = REGION_GEMINI_TTS
     # El plugin abre sesiones HTTP con el helper de livekit-agents. Fuera de
     # un worker ese contexto no existe y falla, la misma trampa que ya nos
     # costo horas con el plugin de Fish.
     async with utils.http_context.open():
-        tts = gemini_tts.TTS(voice_name=clave, **credenciales)
+        tts = gemini_tts.TTS(model=MODELO_GEMINI_TTS, voice_name=clave, **credenciales)
         trozos = bytearray()
         async for evento in tts.synthesize(texto):
             trozos.extend(evento.frame.data.tobytes())
@@ -146,11 +161,16 @@ async def generar(motores_pedidos: list[str], solo: str | None, forzar: bool) ->
             return 1
 
     fallaron = 0
+    intentadas = 0
     for motor, clave, voz in trabajos:
         salida = DESTINO / f"{motor}-{clave}.mp3"
         if salida.exists() and not forzar:
             print(f"  ya esta   {salida.name}")
             continue
+
+        if intentadas:
+            await asyncio.sleep(PAUSA_ENTRE_VOCES)
+        intentadas += 1
 
         texto = TEXTO.format(nombre=voz.nombre)
         try:

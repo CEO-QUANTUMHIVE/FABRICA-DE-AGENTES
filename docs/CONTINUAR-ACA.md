@@ -43,7 +43,7 @@ Se elige con `MOTOR=` en el `.env`, o por sesión desde la demo web.
 | Widget embebible | ✅ en `www.quantumhive.com.ar` (ver 3.4) |
 | Selector de voces | ✅ 8 de Gemini + 10 de OpenAI, agrupadas por género |
 | Grafo de conocimiento | ✅ ~600 nodos, se regenera solo en cada commit |
-| Tests | ✅ **146 en verde**, 1 salteado (espera las muestras de 3.5) |
+| Tests | ✅ **147 en verde**, 1 salteado (espera las muestras de OpenAI) |
 
 ### Configuración vigente
 
@@ -229,7 +229,7 @@ Para desplegar una versión nueva: `npm run build` en `frontend/widget/`,
 copiar `dist/*` + `loader.js` (como `widget.js`) a `/var/www/widget/` por
 `scp`, y borrar los assets viejos (el nombre lleva hash, se acumulan).
 
-### 3.5 Muestras de voz pregrabadas ← CÓDIGO HECHO, FALTA GRABAR (2026-08-10)
+### 3.5 Muestras de voz pregrabadas ← 8 DE 18 GRABADAS (2026-08-10)
 
 **Era lo que más plata estaba sangrando.** Cada vez que un visitante tocaba
 un nombre para escuchar una voz, se reconectaba la sesión entera y se pagaba
@@ -237,7 +237,9 @@ una síntesis. Con 10 voces por motor, un curioso quemaba 10 saludos en 30
 segundos. Y el spec ya dice que **el TTS es el 86% del costo variable**
 (§9): el cacheo no es una optimización, es la estrategia central.
 
-**El cableado está terminado y probado. Lo que falta son los 18 archivos.**
+**El cableado está terminado y probado. Las 8 de Gemini están grabadas
+(~4,7 s cada una, 28 KB, volumen parejo entre −18 y −20 dB). Faltan las 10 de
+OpenAI, trabadas en la clave de Azure (§6).**
 
 - [`scripts/generar_muestras.py`](../scripts/generar_muestras.py) — one-shot
   e idempotente. Lee el catálogo de `motores.py`, así que no hay una segunda
@@ -267,15 +269,17 @@ en producción — no por `gpt-4o-mini-tts`. Ese modelo no tiene `marin` ni
 `cedar` y habría hecho falta crear un deployment nuevo en el portal. Un solo
 camino en vez de dos, y cero infraestructura nueva.
 
-**Para destrabarlo hacen falta las dos credenciales locales** (ver §6). Con
-eso: `uv run python scripts/generar_muestras.py`, escuchar las 18, commitear.
+**Para las 10 que faltan hace falta arreglar la clave de Azure** (§6). Con
+eso: `uv run python scripts/generar_muestras.py`, escucharlas, commitear. El
+script saltea lo que ya está, así que correrlo de nuevo solo graba OpenAI.
 
-> **NO DESPLEGAR EL WIDGET HASTA QUE LOS 18 MP3 EXISTAN.** Sin los archivos,
-> tocar un nombre da 404 y avisa que no se pudo reproducir, y a propósito
-> **no** cae de vuelta a conectar — sería resucitar en silencio el costo que
-> vinimos a matar. O sea que desplegar ahora deja el selector peor que antes.
-> El test `test_muestras.py` saltea mientras la carpeta esté vacía y pasa a
-> exigir las 18 en cuanto aparezca la primera.
+> **NO DESPLEGAR EL WIDGET HASTA QUE ESTÉN LAS 18.** Faltando las de OpenAI,
+> el nivel 3 muestra los chips igual y tocarlos da 404 y avisa que no se pudo
+> reproducir, y a propósito **no** cae de vuelta a conectar — sería resucitar
+> en silencio el costo que vinimos a matar. O sea que desplegar ahora deja el
+> selector del nivel 3 peor que antes. El nivel 2 ya está completo.
+> `test_muestras.py` verifica por motor: exige las 8 de Gemini y saltea
+> OpenAI hasta que aparezca la primera.
 
 Después de esto vienen las capas 2 y 3 (respuestas frecuentes cacheadas y
 sistema híbrido), que necesitan que los tenants existan primero — o sea,
@@ -341,14 +345,13 @@ Cada una tiene un test que la cubre. **No las repitas.**
 | Un `<audio>` nuevo por cada preescucha | Cinco toques rápidos superponen cinco saludos. Se reutiliza uno solo y se corta el anterior |
 | Caer a `conectar()` si la muestra no carga | Resucita en silencio el costo que 3.5 vino a matar. Si falla, se elige la voz y se avisa, nada más |
 | Usar el endpoint de administración de Azure con la key de datos | Da 401 y parece clave inválida. Para saber si un deployment existe, llamarlo directo |
+| Suponer que el TTS de Gemini vive donde el modelo Live | `GCP_LOCATION` es `us-east4` y ahí el TTS no está: 404 "model was not found", que se lee como nombre mal escrito y es la región. La única que responde es `us-central1`, y el modelo es `gemini-2.5-flash-preview-tts`, no el default del plugin |
+| Pedir las 8 voces de Gemini de corrido | `RESOURCE_EXHAUSTED` en la séptima. El modelo preview tiene cuota corta: dos segundos entre voces alcanzan |
 
 ---
 
 ## 6. Lo que Sergio tiene pendiente
 
-- **Reautenticar gcloud** — `gcloud auth application-default login`. La
-  credencial local venció y Vertex AI rechaza con `RefreshError:
-  Reauthentication is needed`. Bloquea grabar las 8 muestras de Gemini (3.5)
 - **Revisar la clave de Azure del `.env` local** — da 401 en las tres
   superficies de la API (administración, datos y WebSocket) contra el
   endpoint y el deployment correctos, y mide 84 caracteres, que no es el

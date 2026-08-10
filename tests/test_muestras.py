@@ -44,12 +44,21 @@ class TestArchivos:
         sobran = sorted(_grabadas() - {_nombre(m, c) for m, c in ESPERADAS})
         assert not sobran, f"No corresponden a ninguna voz del catalogo: {sobran}"
 
-    def test_toda_voz_del_catalogo_tiene_su_saludo(self):
+    @pytest.mark.parametrize(
+        ("motor", "catalogo"), [("gemini", VOCES_GEMINI), ("openai", VOCES_OPENAI)]
+    )
+    def test_toda_voz_del_catalogo_tiene_su_saludo(self, motor, catalogo):
+        """Por motor y no en bloque: cada uno se destraba por su lado.
+
+        Con las 8 de Gemini grabadas y OpenAI todavia trabado por credenciales,
+        un solo test para los dos apagaria el guardarrail de Gemini tambien.
+        """
         grabadas = _grabadas()
-        if not grabadas:
+        esperadas = {_nombre(motor, c) for c in catalogo}
+        if not (grabadas & esperadas):
             pytest.skip(
-                "Todavia no se grabo ninguna muestra. "
-                "Corre: uv run python scripts/generar_muestras.py"
+                f"Todavia no se grabo ninguna muestra de {motor}. "
+                f"Corre: uv run python scripts/generar_muestras.py --motor {motor}"
             )
-        faltan = sorted(_nombre(m, c) for m, c in ESPERADAS if _nombre(m, c) not in grabadas)
-        assert not faltan, f"Voces sin grabar: {faltan}. Corre scripts/generar_muestras.py"
+        faltan = sorted(esperadas - grabadas)
+        assert not faltan, f"Voces de {motor} sin grabar: {faltan}"
