@@ -735,6 +735,75 @@ button:disabled {
   text-decoration: underline;
 }
 
+/* --- celular ---------------------------------------------------------------
+   El iframe ya se achica desde loader.js (mide el viewport del sitio, que
+   desde adentro no se puede consultar). Aca se acomoda lo de adentro para
+   ese alto menor: el orbe mas chico, y todo un poco mas compacto para que
+   el registro de la conversacion siga siendo lo que mas espacio ocupa. */
+
+@media (max-width: 400px), (max-height: 560px) {
+  .orbe__esfera {
+    width: 96px;
+    height: 96px;
+    --qh-radio-vida: 50px;
+  }
+
+  .orbe__vida {
+    inset: -14px;
+  }
+
+  .orbe--abierto .orbe__esfera {
+    width: 38px;
+    height: 38px;
+  }
+
+  .orbe__invitacion {
+    font-size: 11px;
+    padding: 4px 10px;
+  }
+
+  .orbe--abierto {
+    padding: 8px;
+    gap: 6px;
+    border-radius: 12px;
+  }
+
+  .orbe__cuerpo {
+    gap: 6px;
+  }
+
+  .orbe__titulo {
+    font-size: 12px;
+  }
+
+  /* Ocho chips en cuatro columnas quedan ilegibles en 320px de ancho. */
+  .orbe__voces {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .orbe__motor {
+    font-size: 10px;
+  }
+
+  .orbe__marca-pie {
+    font-size: 9px;
+  }
+}
+
+/* El teclado del celular tapa media pantalla al escribir. Con el panel ya
+   corto, el registro se queda sin lugar; achicar el orbe y esconder el
+   cartel recupera esas filas. */
+@media (max-height: 420px) {
+  .orbe--abierto .orbe__esfera {
+    width: 30px;
+    height: 30px;
+  }
+
+  .orbe__marca-pie {
+    display: none;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   * {
     animation: none !important;

@@ -25,9 +25,28 @@
   if (acento) params.set('acento', acento);
   if (acento2) params.set('acento2', acento2);
 
-  // Cerrado tiene que entrar el orbe (150px) + el halo que se sale del
-  // borde + el cartel debajo. Abierto, el panel entero.
-  var TAMANO_CERRADO = { ancho: 240, alto: 230 };
+  // En un celular el panel de 420x640 no entra, y el orbe de 240 tapa
+  // media pantalla. Los tamanos se calculan contra el viewport real del
+  // sitio del cliente — el iframe no puede consultarlo por su cuenta.
+  var ESTRECHO = 520;
+
+  function esCelular() {
+    return window.innerWidth < ESTRECHO;
+  }
+
+  function tamanoCerrado() {
+    return esCelular() ? { ancho: 150, alto: 145 } : { ancho: 240, alto: 230 };
+  }
+
+  function tamanoAbierto() {
+    if (!esCelular()) return { ancho: 420, alto: 640 };
+    // Casi toda la pantalla, dejando los margenes de 12px de cada lado y
+    // lugar arriba para que se siga viendo algo de la pagina.
+    return {
+      ancho: Math.min(420, window.innerWidth - 24),
+      alto: Math.min(640, window.innerHeight - 90),
+    };
+  }
 
   var iframe = document.createElement('iframe');
   iframe.src = origen + '/widget.html?' + params.toString();
@@ -35,27 +54,36 @@
   iframe.setAttribute('allow', 'microphone');
   iframe.style.cssText = [
     'position:fixed',
-    'bottom:16px',
-    'right:16px',
+    'bottom:12px',
+    'right:12px',
     'border:0',
     'z-index:2147483000',
     'background:transparent',
     'color-scheme:normal',
   ].join(';');
 
-  function medir(t) {
+  var abierto = false;
+
+  function medir() {
+    var t = abierto ? tamanoAbierto() : tamanoCerrado();
     iframe.style.width = t.ancho + 'px';
     iframe.style.height = t.alto + 'px';
   }
-  medir(TAMANO_CERRADO);
+  medir();
 
   // El iframe solo ocupa el tamano real del contenido — cerrado, la
   // esfera; abierto, el panel. Asi nunca tapa ni bloquea el resto de la
   // pagina del cliente, sin recurrir a trucos de pointer-events.
   window.addEventListener('message', function (ev) {
     if (ev.origin !== origen || !ev.data || ev.data.tipo !== 'qh-widget-tamano') return;
-    medir(ev.data.abierto ? { ancho: 420, alto: 640 } : TAMANO_CERRADO);
+    abierto = !!ev.data.abierto;
+    medir();
   });
+
+  // Rotar el telefono cambia cual de los dos tamanos corresponde, y el
+  // panel abierto se calcula contra el viewport: sin esto queda cortado
+  // hasta que se cierre y se vuelva a abrir.
+  window.addEventListener('resize', medir);
 
   document.body.appendChild(iframe);
 })();
