@@ -123,6 +123,7 @@ def construir(
     motor: str = "pipeline",
     canal: str = "web",
     contexto_extra: str = "",
+    identidad: str = IDENTIDAD,
 ) -> str:
     """Compone el system prompt final para un motor y un canal.
 
@@ -130,9 +131,11 @@ def construir(
         motor: pipeline, gemini u openai. Define como se entrega el habla.
         canal: web, whatsapp o telegram. Define el formato.
         contexto_extra: datos de la sesion. Vacio por defecto.
+        identidad: capa 1 del prompt. Default: la identidad de QuantumHive.
+            Un tenant con perfil propio (spec S5) pasa la suya.
     """
     partes = [
-        IDENTIDAD,
+        identidad,
         ENTREGAS.get(motor, ENTREGA_PIPELINE),
         CANALES.get(canal, CANAL_WEB),
         EJEMPLOS,
