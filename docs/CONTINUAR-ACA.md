@@ -43,7 +43,7 @@ Se elige con `MOTOR=` en el `.env`, o por sesión desde la demo web.
 | Widget embebible | ✅ en `www.quantumhive.com.ar` (ver 3.4) |
 | Selector de voces | ✅ 8 de Gemini + 10 de OpenAI, agrupadas por género |
 | Grafo de conocimiento | ✅ ~600 nodos, se regenera solo en cada commit |
-| Tests | ✅ **147 en verde**, 1 salteado (espera las muestras de OpenAI) |
+| Tests | ✅ **159 en verde**, 1 salteado (muestras de OpenAI), 5 deseleccionados |
 
 ### Configuración vigente
 
@@ -289,16 +289,38 @@ después de 3.6.
 
 Plan completo y reconciliado con el código de hoy:
 [`docs/superpowers/plans/2026-08-09-motor-voz-fases-5-8.md`](superpowers/plans/2026-08-09-motor-voz-fases-5-8.md).
-Son 10 tareas. **La Task 1 está hecha** (`Config` ya lee las credenciales
-de Supabase, commit `219fadc`); quedan 9.
+Son 10 tareas. **Hechas: 1, 3, 4 y 5. La 2 está escrita pero sin aplicar.**
 
-Proyecto de Supabase creado y verificado: `bcexirhurfigrehfarol`.
-Credenciales en Secret Manager (`motor-voz-supabase-url`,
-`motor-voz-supabase-service-role`) y en el `.env` local y de la VM.
-**Ninguna tabla creada todavía** — eso es la Task 2.
+| Task | Estado |
+|---|---|
+| 1 · `Config` con credenciales de Supabase | ✅ commit `219fadc` |
+| 2 · Esquema y datos semilla | 📝 escrita, **sin aplicar** — `ddcf5cf` |
+| 3 · Modelos del tenant | ✅ `5d65089` |
+| 4 · Repositorio único + test de aislamiento | ✅ código en `d580100`, **el gate no corrió** |
+| 5 · Resolver de tenant por nombre de sala | ✅ `ac4279d` |
+| 6-10 · Fases 7 y 8 | ⛔ bloqueadas por el gate de la Fase 6 |
 
-El test de aislamiento entre tenants es **bloqueante**: no se entrega un
-cliente sin que pase.
+Proyecto de Supabase: `bcexirhurfigrehfarol`. Credenciales en Secret Manager
+(`motor-voz-supabase-url`, `motor-voz-supabase-service-role`) y en el `.env`
+local y de la VM. **Ninguna tabla creada todavía.**
+
+**Por qué está trabado:** el MCP de Supabase no ve ese proyecto — su token
+está scopeado a otras organizaciones (lista cuatro y ninguna es esta). Y
+aplicar la migración por conexión directa con el CLI queda bloqueado por el
+clasificador de permisos, porque lee la contraseña del `.env` y se la pasa a
+un comando de red. Se destraba de cualquiera de las dos formas (ver §6).
+
+**El gate de la Fase 6 es bloqueante y todavía no corrió:**
+`tests/smoke/test_aislamiento_multitenant.py` pide los dos tenants y verifica
+que los servicios de uno nunca aparecen en el otro. Corre contra Supabase
+real a propósito: probar aislamiento contra un mock solo prueba el mock. No
+se avanza a la Fase 7 hasta que pase, y no se entrega un cliente sin eso.
+
+Lo que sí quedó blindado sin depender de la base: `test_un_solo_cliente_supabase.py`
+recorre `src/motor_voz` entero con AST y falla si aparece `create_client` o
+`acreate_client` fuera de `brain/tenants/repositorio.py`. El motor usa la
+`SERVICE_ROLE_KEY`, que saltea RLS por diseño, así que RLS no es la defensa
+real — la defensa es que toda query pase por ese archivo.
 
 Ejecución elegida: subagent-driven (un subagente por tarea, revisión entre
 tareas).
@@ -347,11 +369,18 @@ Cada una tiene un test que la cubre. **No las repitas.**
 | Usar el endpoint de administración de Azure con la key de datos | Da 401 y parece clave inválida. Para saber si un deployment existe, llamarlo directo |
 | Suponer que el TTS de Gemini vive donde el modelo Live | `GCP_LOCATION` es `us-east4` y ahí el TTS no está: 404 "model was not found", que se lee como nombre mal escrito y es la región. La única que responde es `us-central1`, y el modelo es `gemini-2.5-flash-preview-tts`, no el default del plugin |
 | Pedir las 8 voces de Gemini de corrido | `RESOURCE_EXHAUSTED` en la séptima. El modelo preview tiene cuota corta: dos segundos entre voces alcanzan |
+| Suponer que el MCP de Supabase ve todos los proyectos | Su token está scopeado por organización. `bcexirhurfigrehfarol` no aparece: lista otros cuatro y da "access denied" sin decir que es de scope |
 
 ---
 
 ## 6. Lo que Sergio tiene pendiente
 
+- **Aplicar la migración de la Task 2** — desbloquea toda la Fase 6 en
+  adelante. Dos caminos: correr `supabase link --project-ref bcexirhurfigrehfarol`
+  y después `supabase db push` (el link pide la contraseña de forma
+  interactiva, no queda en el historial), **o** reautenticar el MCP de
+  Supabase eligiendo la organización dueña del proyecto, y que lo aplique el
+  agente
 - **Revisar la clave de Azure del `.env` local** — da 401 en las tres
   superficies de la API (administración, datos y WebSocket) contra el
   endpoint y el deployment correctos, y mide 84 caracteres, que no es el
