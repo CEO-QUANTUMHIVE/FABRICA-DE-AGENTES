@@ -43,7 +43,8 @@ Se elige con `MOTOR=` en el `.env`, o por sesión desde la demo web.
 | Widget embebible | ✅ en `www.quantumhive.com.ar` (ver 3.4) |
 | Selector de voces | ✅ 8 de Gemini + 10 de OpenAI, agrupadas por género |
 | Grafo de conocimiento | ✅ ~600 nodos, se regenera solo en cada commit |
-| Tests | ✅ **159 en verde**, 1 salteado (muestras de OpenAI), 5 deseleccionados |
+| Tests | ✅ **180 en verde**, 1 salteado (muestras de OpenAI), 5 deseleccionados |
+| Multi-tenant | ✅ dos tenants en Supabase, aislamiento probado contra la base real |
 
 ### Configuración vigente
 
@@ -289,41 +290,36 @@ después de 3.6.
 
 Plan completo y reconciliado con el código de hoy:
 [`docs/superpowers/plans/2026-08-09-motor-voz-fases-5-8.md`](superpowers/plans/2026-08-09-motor-voz-fases-5-8.md).
-Son 10 tareas. **Hechas: 1, 3, 4 y 5. La 2 está escrita pero sin aplicar.**
+**Las 10 tareas están implementadas.** Resultado completo en
+[`docs/resultados/fases5-8-multitenant.md`](resultados/fases5-8-multitenant.md).
 
-| Task | Estado |
-|---|---|
-| 1 · `Config` con credenciales de Supabase | ✅ commit `219fadc` |
-| 2 · Esquema y datos semilla | 📝 escrita, **sin aplicar** — `ddcf5cf` |
-| 3 · Modelos del tenant | ✅ `5d65089` |
-| 4 · Repositorio único + test de aislamiento | ✅ código en `d580100`, **el gate no corrió** |
-| 5 · Resolver de tenant por nombre de sala | ✅ `ac4279d` |
-| 6-10 · Fases 7 y 8 | ⛔ bloqueadas por el gate de la Fase 6 |
+Supabase `bcexirhurfigrehfarol`, migración aplicada, dos tenants cargados
+(`quantumhive` y `demo_capilar`) con sus servicios y sus voces.
 
-Proyecto de Supabase: `bcexirhurfigrehfarol`. Credenciales en Secret Manager
-(`motor-voz-supabase-url`, `motor-voz-supabase-service-role`) y en el `.env`
-local y de la VM. **Ninguna tabla creada todavía.**
+**Del gate de cinco puntos, cuatro están verificados. Falta el de oído:**
 
-**Por qué está trabado:** el MCP de Supabase no ve ese proyecto — su token
-está scopeado a otras organizaciones (lista cuatro y ninguna es esta). Y
-aplicar la migración por conexión directa con el CLI queda bloqueado por el
-clasificador de permisos, porque lee la contraseña del `.env` y se la pasa a
-un comando de red. Se destraba de cualquiera de las dos formas (ver §6).
+| # | Punto | |
+|---|---|---|
+| 1 | Dos tenants con servicios y voz propios | ✅ |
+| 2 | Test de aislamiento contra Supabase real | ✅ 2 en verde |
+| 3 | Cada tenant responde solo con sus servicios | ✅ |
+| 4 | **Cada tenant habla con su propia voz** | ⚠️ **falta escucharlo** |
+| 5 | `brain/` sigue sin importar `livekit` | ✅ |
 
-**El gate de la Fase 6 es bloqueante y todavía no corrió:**
-`tests/smoke/test_aislamiento_multitenant.py` pide los dos tenants y verifica
-que los servicios de uno nunca aparecen en el otro. Corre contra Supabase
-real a propósito: probar aislamiento contra un mock solo prueba el mock. No
-se avanza a la Fase 7 hasta que pase, y no se entrega un cliente sin eso.
+**El punto 4 depende de vos**, y hay una trampa: el `voice_id` de
+`demo_capilar` es el placeholder que traía el plan. Que sea distinto del de
+QuantumHive **no** prueba que sea una voz real de Fish — si no existe, el
+motor cae a la voz por defecto y los dos van a sonar igual. Elegir uno real
+es el pendiente de §6.
 
-Lo que sí quedó blindado sin depender de la base: `test_un_solo_cliente_supabase.py`
-recorre `src/motor_voz` entero con AST y falla si aparece `create_client` o
+Lo que quedó blindado: `test_un_solo_cliente_supabase.py` recorre
+`src/motor_voz` entero con AST y falla si aparece `create_client` o
 `acreate_client` fuera de `brain/tenants/repositorio.py`. El motor usa la
 `SERVICE_ROLE_KEY`, que saltea RLS por diseño, así que RLS no es la defensa
-real — la defensa es que toda query pase por ese archivo.
+real — la defensa es que toda query pase por ese archivo. Eso además hace
+barato mover `brain/` a su repo propio (ver §4).
 
-Ejecución elegida: subagent-driven (un subagente por tarea, revisión entre
-tareas).
+Lo que sigue son las Fases 9 y 10, cada una con su plan propio.
 
 ---
 
@@ -338,6 +334,7 @@ tareas).
 | Normalizar texto en código | Pedírselo al LLM falla, y el error sale al aire |
 | API en la VM, no Cloud Run | Evita aflojar la política de organización, sin CORS, gratis |
 | Cloudflare para Web Factory, no para esto | Pages + for SaaS resuelven dominios de clientes. Otro producto |
+| `brain/` sale a un repo propio (2026-08-10) | Va a ser el pilar donde vivan todos los agentes de QuantumHive, los propios y los de clientes. Hoy el asistente de escritorio tendría que importar `motor_voz.brain` para algo que no tiene que ver con voz. Se hace **después** de cerrar las Fases 5-8, y sale barato porque todo el acceso a datos pasa por un solo archivo |
 
 ---
 
@@ -370,6 +367,7 @@ Cada una tiene un test que la cubre. **No las repitas.**
 | Suponer que el TTS de Gemini vive donde el modelo Live | `GCP_LOCATION` es `us-east4` y ahí el TTS no está: 404 "model was not found", que se lee como nombre mal escrito y es la región. La única que responde es `us-central1`, y el modelo es `gemini-2.5-flash-preview-tts`, no el default del plugin |
 | Pedir las 8 voces de Gemini de corrido | `RESOURCE_EXHAUSTED` en la séptima. El modelo preview tiene cuota corta: dos segundos entre voces alcanzan |
 | Suponer que el MCP de Supabase ve todos los proyectos | Su token está scopeado por organización. `bcexirhurfigrehfarol` no aparece: lista otros cuatro y da "access denied" sin decir que es de scope |
+| **Aplicar un snippet de un plan sin leer el archivo real** | Un plan de un día atrás ya puede estar atrasado. Los de las Fases 5-8 borraban, entre los cuatro, la calibración del VAD, la ruta `/api/voces`, la config de interrupción y la resolución de voz. Leer el archivo primero, siempre |
 
 ---
 
