@@ -25,7 +25,9 @@
   if (acento) params.set('acento', acento);
   if (acento2) params.set('acento2', acento2);
 
-  var TAMANO_CERRADO = { ancho: 220, alto: 220 };
+  // Cerrado tiene que entrar el orbe (150px) + el halo que se sale del
+  // borde + el cartel debajo. Abierto, el panel entero.
+  var TAMANO_CERRADO = { ancho: 240, alto: 230 };
 
   var iframe = document.createElement('iframe');
   iframe.src = origen + '/widget.html?' + params.toString();
@@ -52,7 +54,7 @@
   // pagina del cliente, sin recurrir a trucos de pointer-events.
   window.addEventListener('message', function (ev) {
     if (ev.origin !== origen || !ev.data || ev.data.tipo !== 'qh-widget-tamano') return;
-    medir(ev.data.abierto ? { ancho: 460, alto: 640 } : TAMANO_CERRADO);
+    medir(ev.data.abierto ? { ancho: 420, alto: 640 } : TAMANO_CERRADO);
   });
 
   document.body.appendChild(iframe);

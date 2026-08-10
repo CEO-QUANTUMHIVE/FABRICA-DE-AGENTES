@@ -3,47 +3,74 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Agente de QuantumHive</title>
+    <title>Quantum Asistente</title>
     <link rel="stylesheet" href="./app.css" />
   </head>
   <body>
-    <div id="raiz">
-      <div id="widget" class="widget" data-estado="dormido">
-        <div class="widget__panel">
-          <div class="widget__cabecera">
-            <span class="widget__titulo">Hablá con el agente</span>
-            <button id="cerrar" class="widget__cerrar" aria-label="Cerrar">✕</button>
-          </div>
-
-          <div id="motores" class="widget__motores" role="radiogroup" aria-label="Motor de conversación"></div>
-
-          <button id="voces-resumen" class="widget__voces-resumen" type="button" hidden>
-            <span id="voces-resumen-texto" class="widget__voces-resumen-texto">Elegí una voz</span>
-            <span id="voces-resumen-flecha" class="widget__voces-resumen-flecha">▾</span>
+    <div id="root">
+      <div id="orbe" class="orbe" data-estado="dormido">
+        <div class="orbe__cabecera">
+          <button id="esfera" class="orbe__esfera" title="Tocame y te atiendo" aria-label="Abrir el asistente">
+            <img id="logo" class="orbe__logo" src="./quantumhive-logo.png" alt="QuantumHive" draggable="false" />
+            <!-- El halo: respira, irradia energia y tira chispas. Portado de
+                 QUANTUM-ASISTENTE-, donde solo aparecia mirando la pantalla;
+                 aca esta siempre, es lo que invita a tocar el orbe. -->
+            <span class="orbe__vida" aria-hidden="true">
+              <span class="orbe__vida-aro orbe__vida-aro--verde"></span>
+              <span class="orbe__vida-aro orbe__vida-aro--energia"></span>
+              <span class="orbe__chispa" style="--i: 0"></span>
+              <span class="orbe__chispa" style="--i: 1"></span>
+              <span class="orbe__chispa" style="--i: 2"></span>
+              <span class="orbe__chispa" style="--i: 3"></span>
+              <span class="orbe__chispa" style="--i: 4"></span>
+              <span class="orbe__chispa" style="--i: 5"></span>
+            </span>
           </button>
-          <div id="voces" class="widget__voces" role="radiogroup" aria-label="Voz de Gemini" hidden></div>
 
-          <p id="aviso" class="widget__aviso" hidden></p>
+          <span class="orbe__invitacion">Tocame y te atiendo</span>
+          <span class="orbe__titulo">Quantum Asistente</span>
 
-          <div id="registro" class="widget__registro">
-            <p class="widget__vacio">Tocá el micrófono y hablá, o escribí acá abajo.</p>
+          <div class="orbe__acciones">
+            <button id="mic" class="orbe__mic" data-on="false" title="Prender micrófono">
+              <span class="orbe__mic-punto" aria-hidden="true"></span>
+              <span id="mic-texto">Micrófono OFF</span>
+            </button>
+            <button id="freno" class="orbe__boton orbe__boton--freno" data-on="false" title="Cortar">■</button>
           </div>
-
-          <div class="widget__controles">
-            <button id="mic" class="widget__mic" title="Hablar">🎙</button>
-            <div class="widget__escribir">
-              <input id="borrador" placeholder="Escribí…" />
-              <button id="enviar" aria-label="Enviar">↑</button>
-            </div>
-            <button id="cortar" class="widget__cortar" title="Terminar" disabled>■</button>
-          </div>
-
-          <p class="widget__marca-pie">Con tecnología de <a href="https://www.quantumhive.com.ar" target="_blank" rel="noopener">QuantumHive</a></p>
         </div>
 
-        <button id="esfera" class="widget__esfera" aria-label="Abrir el agente">
-          <span id="marca-texto" class="widget__marca">QH</span>
-        </button>
+        <div class="orbe__cuerpo">
+          <div id="motores" class="orbe__motores" role="radiogroup" aria-label="Motor de conversación"></div>
+
+          <button type="button" id="voces-resumen" class="orbe__fuentes-resumen" hidden>
+            <span id="voces-resumen-texto" class="orbe__fuentes-resumen-texto">
+              Elegí quién querés que te atienda
+            </span>
+            <span id="voces-resumen-flecha" class="orbe__fuentes-resumen-flecha">▾</span>
+          </button>
+
+          <div id="voces" class="orbe__voces" role="radiogroup" aria-label="Voz del asistente" hidden></div>
+
+          <div id="aviso" class="orbe__aviso" hidden></div>
+
+          <div id="registro" class="orbe__registro">
+            <p class="orbe__vacio">
+              Prendé el micrófono y hablame.
+              <br />
+              También podés escribir.
+            </p>
+          </div>
+
+          <div class="orbe__escribir">
+            <input id="borrador" placeholder="Escribí…" />
+            <button id="enviar" aria-label="Enviar">↑</button>
+          </div>
+
+          <p class="orbe__marca-pie">
+            Con tecnología de
+            <a href="https://www.quantumhive.com.ar" target="_blank" rel="noopener">QuantumHive</a>
+          </p>
+        </div>
       </div>
     </div>
     <script type="module" src="./app.js"></script>

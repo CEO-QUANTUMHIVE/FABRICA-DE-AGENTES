@@ -1,32 +1,25 @@
 // Widget embebible del orbe.
 //
-// Logica de conexion a LiveKit portada de frontend/demo/main.js (ya
-// probada en produccion): Room, TrackSubscribed, TranscriptionReceived,
-// ActiveSpeakersChanged. El layout — orbe colapsado / panel expandido,
-// selector de motor, marca por tenant — es el aporte nuevo de este
-// archivo, con el lenguaje visual portado de QUANTUM-ASISTENTE-
-// (apps/desktop/src/orbe/Orbe.tsx, rama agent/navegador-integrado).
+// La interfaz es un port de QUANTUM-ASISTENTE-
+// (apps/desktop/src/orbe/Orbe.tsx, rama agent/navegador-integrado): mismos
+// nombres de clase, mismos estados visuales, mismo selector de voces que
+// elige y prueba al toque. Lo unico que se saca es todo lo de vision y
+// pantallas, que en una landing no aplica.
+//
+// Lo que cambia por debajo: alla el orbe hablaba con Electron por
+// `window.qh`; aca habla con LiveKit. La logica de conexion viene de
+// frontend/demo/main.js, que ya estaba probada en produccion.
 import { Room, RoomEvent, Track } from 'livekit-client';
 
 const parametros = new URLSearchParams(location.search);
 const API = parametros.get('api') || 'https://voz.quantumhive.com.ar';
 const TENANT = parametros.get('tenant') || 'quantumhive';
 const LOGO = parametros.get('logo') || '';
-const ACENTO = parametros.get('acento') || '';
-const ACENTO2 = parametros.get('acento2') || '';
-
-if (ACENTO) document.documentElement.style.setProperty('--qh-acento', ACENTO);
-if (ACENTO2) document.documentElement.style.setProperty('--qh-acento-2', ACENTO2);
-if (LOGO) {
-  const marca = document.getElementById('marca-texto');
-  const img = document.createElement('img');
-  img.src = LOGO;
-  img.alt = TENANT;
-  marca.replaceWith(img);
-}
 
 const $ = (id) => document.getElementById(id);
-const widget = $('widget');
+const orbe = $('orbe');
+
+if (LOGO) $('logo').src = LOGO;
 
 let sala = null;
 let nivelElegido = 1;
@@ -37,36 +30,38 @@ let vocesAbierto = false;
 let temporizador = null;
 let microfonoActivo = false;
 
-// Nivel 3 (openai / "realismo extremo") existe en el catalogo pero
-// todavia no tiene credenciales de Azure en produccion. En vez de
-// intentar conectar y fallar, se muestra deshabilitado con una nota.
-// El dia que este listo, se saca esta linea — no hace falta tocar nada
-// mas del widget.
+// Nivel 3 (openai / "realismo extremo") existe en el catalogo pero todavia
+// no tiene credenciales de Azure en produccion. En vez de intentar conectar
+// y fallar, se muestra deshabilitado con una nota. El dia que este listo,
+// se saca esta linea y nada mas.
 const NIVELES_LISTOS = new Set([1, 2]);
+const ETIQUETAS = { 1: 'Clonación', 2: 'Voz humana', 3: 'Realismo extremo' };
 
 function estado(clave) {
-  widget.dataset.estado = clave;
+  orbe.dataset.estado = clave;
 }
 
 function aviso(texto) {
   const el = $('aviso');
-  if (!texto) { el.hidden = true; return; }
+  if (!texto) {
+    el.hidden = true;
+    return;
+  }
   el.textContent = texto;
   el.hidden = false;
 }
+$('aviso').onclick = () => aviso('');
 
-// ---------- abrir/cerrar ----------
+// ---------- abrir / cerrar ----------
 
 function abrir(v) {
-  widget.classList.toggle('widget--abierto', v);
+  orbe.classList.toggle('orbe--abierto', v);
   parent.postMessage({ tipo: 'qh-widget-tamano', abierto: v }, '*');
-  if (v && !sala && estado.actual !== 'conectando') conectar();
 }
 
-$('esfera').onclick = () => abrir(!widget.classList.contains('widget--abierto'));
-$('cerrar').onclick = () => abrir(false);
+$('esfera').onclick = () => abrir(!orbe.classList.contains('orbe--abierto'));
 
-// ---------- selector de motor ----------
+// ---------- motores (los tres planes) ----------
 
 async function cargarNiveles() {
   try {
@@ -74,15 +69,14 @@ async function cargarNiveles() {
     niveles = (await r.json()).niveles;
   } catch {
     niveles = [
-      { nivel: 1, titulo: 'Clonación', descripcion: 'Voz clonada', plan: 'basico' },
-      { nivel: 2, titulo: 'Voz humana', descripcion: 'Voz a voz natural', plan: 'medio' },
-      { nivel: 3, titulo: 'Realismo extremo', descripcion: 'Máxima expresividad', plan: 'premium' },
+      { nivel: 1, titulo: 'Clonación', plan: 'basico' },
+      { nivel: 2, titulo: 'Voz humana', plan: 'medio' },
+      { nivel: 3, titulo: 'Realismo extremo', plan: 'premium' },
     ];
   }
   dibujarNiveles();
+  mostrarSelectorDeVoces(nivelElegido === 2);
 }
-
-const ETIQUETAS = { 1: 'Clonación', 2: 'Voz humana', 3: 'Realismo extremo' };
 
 function dibujarNiveles() {
   const cont = $('motores');
@@ -90,10 +84,12 @@ function dibujarNiveles() {
   for (const n of niveles) {
     const listo = NIVELES_LISTOS.has(n.nivel);
     const b = document.createElement('button');
-    b.className = 'widget__motor';
+    b.type = 'button';
+    b.className = 'orbe__motor';
     b.setAttribute('role', 'radio');
     b.setAttribute('aria-checked', String(n.nivel === nivelElegido));
     b.disabled = !listo;
+    b.dataset.nivel = String(n.nivel);
     b.innerHTML = `${ETIQUETAS[n.nivel] ?? n.titulo}${listo ? '' : '<small>Pronto</small>'}`;
     b.onclick = () => elegirNivel(n.nivel);
     cont.append(b);
@@ -107,18 +103,18 @@ function elegirNivel(numero) {
   }
   nivelElegido = numero;
   for (const b of $('motores').children) {
-    b.setAttribute('aria-checked', String(b.textContent.startsWith(ETIQUETAS[numero])));
+    b.setAttribute('aria-checked', String(Number(b.dataset.nivel) === numero));
   }
   mostrarSelectorDeVoces(numero === 2);
-  // Cambiar de motor fija uno nuevo al reconectar: no se mezclan
-  // motores dentro de una misma sala.
+  // Cambiar de motor fija uno nuevo al reconectar: no se mezclan motores
+  // dentro de una misma sala.
   if (sala) conectar();
 }
 
-// ---------- selector de voz (solo motor gemini) ----------
-// Calcado del patron de QUANTUM-ASISTENTE- (Orbe.tsx: elegirYProbarVoz):
-// tocar un nombre elige esa voz Y la prueba al toque, reconectando. El
-// saludo que ya dispara Receptor.on_enter en el agente es la "prueba".
+// ---------- voces (solo el motor gemini) ----------
+// Mismo patron que `elegirYProbarVoz` en el original: tocar un nombre lo
+// elige Y lo prueba en el acto — aca reconectando, porque el saludo que
+// dispara Receptor.on_enter en el agente es la prueba.
 
 async function cargarVoces() {
   try {
@@ -133,15 +129,17 @@ async function cargarVoces() {
 
 function mostrarSelectorDeVoces(mostrar) {
   $('voces-resumen').hidden = !mostrar;
-  $('voces').hidden = !mostrar || !vocesAbierto;
-  if (!mostrar) { vocesAbierto = false; }
+  if (!mostrar) {
+    vocesAbierto = false;
+    $('voces').hidden = true;
+  }
 }
 
 function dibujarVoces() {
-  const nombreElegido = voces.find((v) => v.voz === vozElegida)?.nombre ?? '';
-  $('voces-resumen-texto').textContent = nombreElegido
-    ? `Elegí a tu asistente: ${nombreElegido}`
-    : 'Elegí una voz';
+  const nombre = voces.find((v) => v.voz === vozElegida)?.nombre ?? '';
+  $('voces-resumen-texto').textContent = nombre
+    ? `Elegí quién querés que te atienda: ${nombre}`
+    : 'Elegí quién querés que te atienda';
   $('voces-resumen-flecha').textContent = vocesAbierto ? '▴' : '▾';
 
   const cont = $('voces');
@@ -149,12 +147,12 @@ function dibujarVoces() {
   for (const v of voces) {
     const b = document.createElement('button');
     b.type = 'button';
-    b.className = 'widget__voz-chip';
+    b.className = 'orbe__voz-chip';
     b.setAttribute('role', 'radio');
     b.dataset.activa = String(v.voz === vozElegida);
     b.title = `Elegir y escuchar a ${v.nombre}`;
     b.textContent = v.nombre;
-    b.onclick = () => elegirYEscucharVoz(v.voz);
+    b.onclick = () => elegirYProbarVoz(v.voz);
     cont.append(b);
   }
 }
@@ -165,54 +163,59 @@ $('voces-resumen').onclick = () => {
   $('voces-resumen-flecha').textContent = vocesAbierto ? '▴' : '▾';
 };
 
-function elegirYEscucharVoz(voz) {
+function elegirYProbarVoz(voz) {
   vozElegida = voz;
+  // Se esconde al elegir, como en el original: el menu no ocupa el chat
+  // todo el tiempo.
   vocesAbierto = false;
   $('voces').hidden = true;
   dibujarVoces();
-  // Reconecta: sala nueva, Receptor.on_enter saluda de nuevo, y esta vez
-  // con la voz elegida — asi se "prueba" con solo tocar el nombre.
   conectar();
 }
 
 // ---------- turnos ----------
 
-// Los turnos que arma el usuario (texto escrito) llegan completos de una.
+function registro() {
+  return $('registro');
+}
+
+function limpiarVacio() {
+  const vacio = registro().querySelector('.orbe__vacio');
+  if (vacio) vacio.remove();
+}
+
+// Lo que escribe el usuario llega completo de una.
 function agregarTurno(quien, texto) {
   if (!texto?.trim()) return;
-  const registro = $('registro');
-  const vacio = registro.querySelector('.widget__vacio');
-  if (vacio) vacio.remove();
+  limpiarVacio();
   const div = document.createElement('div');
   div.className = 'turno';
   div.dataset.quien = quien;
   div.textContent = texto;
-  registro.append(div);
-  registro.scrollTop = registro.scrollHeight;
+  registro().append(div);
+  registro().scrollTop = registro().scrollHeight;
 }
 
-// La transcripcion de LiveKit llega en fragmentos con el mismo id de
-// segmento hasta que el ultimo trae final=true. Si esperamos al final
-// para recien mostrar algo, el audio ya arranco hace rato y el texto se
-// atrasa. Por eso el turno se crea con el primer fragmento y se va
-// actualizando in-place, igual que ya se escucha el audio en vivo.
-const turnosEnCurso = new Map(); // id de segmento -> elemento DOM
+// La transcripcion llega en fragmentos con el mismo id de segmento hasta
+// que el ultimo trae final=true. Si se espera al final para recien mostrar
+// algo, el audio ya arranco hace rato y el texto va atrasado. Por eso el
+// turno se crea con el primer fragmento y se actualiza in-place — igual
+// que el original, que iba pegando fragmentos al ultimo turno abierto.
+const turnosEnCurso = new Map();
 
 function actualizarTurno(quien, segmento) {
   if (!segmento.text?.trim()) return;
-  const registro = $('registro');
   let el = turnosEnCurso.get(segmento.id);
   if (!el) {
-    const vacio = registro.querySelector('.widget__vacio');
-    if (vacio) vacio.remove();
+    limpiarVacio();
     el = document.createElement('div');
     el.className = 'turno';
     el.dataset.quien = quien;
-    registro.append(el);
+    registro().append(el);
     turnosEnCurso.set(segmento.id, el);
   }
   el.textContent = segmento.text;
-  registro.scrollTop = registro.scrollHeight;
+  registro().scrollTop = registro().scrollHeight;
   if (segmento.final) turnosEnCurso.delete(segmento.id);
 }
 
@@ -245,24 +248,21 @@ async function conectar() {
   });
   sala.on(RoomEvent.Disconnected, () => {
     estado('dormido');
-    $('cortar').disabled = true;
+    marcarMicrofono(false);
   });
   sala.on(RoomEvent.TranscriptionReceived, (segmentos, participante) => {
     const esAgente = participante?.identity !== sala.localParticipant.identity;
-    for (const s of segmentos) {
-      actualizarTurno(esAgente ? 'agente' : 'yo', s);
-    }
+    for (const s of segmentos) actualizarTurno(esAgente ? 'copiloto' : 'yo', s);
   });
   sala.on(RoomEvent.ActiveSpeakersChanged, (activos) => {
     const agenteHabla = activos.some((p) => p.identity !== sala.localParticipant.identity);
-    estado(agenteHabla ? 'hablando' : 'escuchando');
+    estado(agenteHabla ? 'hablando' : microfonoActivo ? 'escuchando' : 'lista');
   });
 
   try {
     await sala.connect(datos.url, datos.token);
     await sala.localParticipant.setMicrophoneEnabled(true);
-    microfonoActivo = true;
-    $('mic').dataset.on = 'true';
+    marcarMicrofono(true);
   } catch (e) {
     estado('error');
     aviso(`No se pudo conectar: ${e.message}`);
@@ -270,7 +270,6 @@ async function conectar() {
   }
 
   estado('escuchando');
-  $('cortar').disabled = false;
 
   // Corte automatico: coincide con el limite del lado del servidor
   // (Config.max_session_seconds), asi el widget no queda esperando una
@@ -278,7 +277,7 @@ async function conectar() {
   clearTimeout(temporizador);
   temporizador = setTimeout(() => {
     desconectar();
-    aviso('La sesión llegó a su límite de tiempo. Tocá el micrófono para empezar otra.');
+    aviso('La sesión llegó a su límite de tiempo. Prendé el micrófono para empezar otra.');
   }, (datos.duracion_maxima_seg ?? 240) * 1000);
 }
 
@@ -288,36 +287,51 @@ async function desconectar({ silencioso = false } = {}) {
     await sala.disconnect();
     sala = null;
   }
-  microfonoActivo = false;
-  $('mic').dataset.on = 'false';
+  marcarMicrofono(false);
   if (!silencioso) estado('dormido');
 }
 
 // ---------- controles ----------
 
+function marcarMicrofono(activo) {
+  microfonoActivo = activo;
+  $('mic').dataset.on = String(activo);
+  $('mic-texto').textContent = `Micrófono ${activo ? 'ON' : 'OFF'}`;
+  $('mic').title = activo ? 'Apagar micrófono' : 'Prender micrófono';
+}
+
 $('mic').onclick = async () => {
-  if (!sala) { await conectar(); return; }
-  microfonoActivo = !microfonoActivo;
-  await sala.localParticipant.setMicrophoneEnabled(microfonoActivo);
-  $('mic').dataset.on = String(microfonoActivo);
+  // Igual que en el original: prender el microfono es lo que dispara el
+  // saludo del agente, cada vez.
+  if (!sala) {
+    await conectar();
+    return;
+  }
+  const proximo = !microfonoActivo;
+  await sala.localParticipant.setMicrophoneEnabled(proximo);
+  marcarMicrofono(proximo);
+  estado(proximo ? 'escuchando' : 'lista');
 };
 
-$('cortar').onclick = () => desconectar();
+$('freno').onclick = () => desconectar();
 
 async function enviarTexto() {
   const input = $('borrador');
   const texto = input.value.trim();
   if (!texto) return;
   if (!sala) await conectar();
+  if (!sala) return;
   agregarTurno('yo', texto);
   input.value = '';
-  // El canal de datos de LiveKit lleva el texto al agente; el mismo
-  // Agent que ya atiende voz lo procesa igual, via generate_reply.
+  // El canal de datos de LiveKit lleva el texto al agente; el mismo Agent
+  // que ya atiende voz lo procesa igual, via generate_reply.
   await sala.localParticipant.sendText(texto, { topic: 'lk.chat' });
 }
 
 $('enviar').onclick = enviarTexto;
-$('borrador').onkeydown = (e) => { if (e.key === 'Enter') enviarTexto(); };
+$('borrador').onkeydown = (e) => {
+  if (e.key === 'Enter') enviarTexto();
+};
 
 cargarNiveles();
 cargarVoces();
