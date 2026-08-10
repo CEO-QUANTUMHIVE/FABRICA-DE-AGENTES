@@ -109,3 +109,23 @@ def test_crear_tts_devuelve_un_tts_de_fishaudio():
     from livekit.plugins import fishaudio
 
     assert isinstance(tts.crear(cargar(ENTORNO)), fishaudio.TTS)
+
+
+def test_opciones_tts_el_override_pisa_al_voice_id_de_config():
+    opciones_resultado = tts.opciones(
+        cargar(ENTORNO | {"FISH_VOICE_ID": "voz-de-config"}),
+        voice_id_override="voz-del-tenant",
+    )
+    assert opciones_resultado["voice_id"] == "voz-del-tenant"
+
+
+def test_opciones_tts_sin_override_usa_el_de_config():
+    opciones_resultado = tts.opciones(cargar(ENTORNO | {"FISH_VOICE_ID": "voz-de-config"}))
+    assert opciones_resultado["voice_id"] == "voz-de-config"
+
+
+def test_opciones_tts_override_vacio_no_pisa_nada():
+    opciones_resultado = tts.opciones(
+        cargar(ENTORNO | {"FISH_VOICE_ID": "voz-de-config"}), voice_id_override=""
+    )
+    assert opciones_resultado["voice_id"] == "voz-de-config"
