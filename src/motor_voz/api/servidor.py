@@ -25,7 +25,7 @@ from livekit import api
 from motor_voz.api import niveles as catalogo_niveles
 from motor_voz.api.limites import LimiteAlcanzado, Limitador
 from motor_voz.config import Config, cargar
-from motor_voz.voice.motores import catalogo_de_voces
+from motor_voz.voice.motores import catalogo_de_voces, ruta_de_muestra
 
 logger = logging.getLogger("motor-voz.api")
 ORIGENES_PERMITIDOS = "*"  # la demo es publica; en produccion, el dominio propio
@@ -61,7 +61,16 @@ async def listar_voces(peticion: web.Request) -> web.Response:
         web.json_response(
             {
                 "voces": [
-                    {"voz": clave, "nombre": v.nombre, "genero": v.genero}
+                    {
+                        "voz": clave,
+                        "nombre": v.nombre,
+                        "genero": v.genero,
+                        # El saludo pregrabado, para que preescuchar una voz
+                        # no cueste una sintesis. La ruta la decide el
+                        # backend, que ya es dueño del catalogo: el navegador
+                        # no arma nombres de archivo por convencion.
+                        "muestra": ruta_de_muestra(motor, clave),
+                    }
                     for clave, v in catalogo.items()
                 ]
             }

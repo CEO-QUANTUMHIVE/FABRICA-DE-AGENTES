@@ -43,7 +43,7 @@ Se elige con `MOTOR=` en el `.env`, o por sesión desde la demo web.
 | Widget embebible | ✅ en `www.quantumhive.com.ar` (ver 3.4) |
 | Selector de voces | ✅ 8 de Gemini + 10 de OpenAI, agrupadas por género |
 | Grafo de conocimiento | ✅ ~600 nodos, se regenera solo en cada commit |
-| Tests | ✅ **142 en verde** |
+| Tests | ✅ **146 en verde**, 1 salteado (espera las muestras de 3.5) |
 
 ### Configuración vigente
 
@@ -229,27 +229,53 @@ Para desplegar una versión nueva: `npm run build` en `frontend/widget/`,
 copiar `dist/*` + `loader.js` (como `widget.js`) a `/var/www/widget/` por
 `scp`, y borrar los assets viejos (el nombre lleva hash, se acumulan).
 
-### 3.5 Muestras de voz pregrabadas ← ARRANCAR POR ACÁ
+### 3.5 Muestras de voz pregrabadas ← CÓDIGO HECHO, FALTA GRABAR (2026-08-10)
 
-**Es lo que más plata está sangrando hoy.** Cada vez que un visitante toca
-un nombre para escuchar una voz, se reconecta la sesión entera y se paga
-una síntesis. Con 10 voces por motor, un curioso quema 10 saludos en 30
+**Era lo que más plata estaba sangrando.** Cada vez que un visitante tocaba
+un nombre para escuchar una voz, se reconectaba la sesión entera y se pagaba
+una síntesis. Con 10 voces por motor, un curioso quemaba 10 saludos en 30
 segundos. Y el spec ya dice que **el TTS es el 86% del costo variable**
 (§9): el cacheo no es una optimización, es la estrategia central.
 
-Plan: un saludo corto pregrabado por voz, generado una vez, servido como
-estático. Tocar un nombre pasa a costar **cero** y suena al instante.
+**El cableado está terminado y probado. Lo que falta son los 18 archivos.**
 
-Ya está verificado lo técnico:
+- [`scripts/generar_muestras.py`](../scripts/generar_muestras.py) — one-shot
+  e idempotente. Lee el catálogo de `motores.py`, así que no hay una segunda
+  lista que se pueda desincronizar. **No regenera lo que ya existe** salvo
+  `--forzar`: cada muestra de OpenAI cuesta una sesión Realtime contra una
+  suscripción con tope, y correr el script dos veces no puede costar dos veces.
+- Texto: `Hola, soy {nombre}, de QuantumHive. ¿En qué te puedo ayudar?` —
+  mismo molde que el saludo real de `Receptor.on_enter`, sin adjetivos con
+  género para que sirva igual en las 18.
+- MP3 mono 48 kbps (~25 KB cada una). MP3 y no Opus porque es lo único que
+  reproduce todo iPhone, y el widget se usa sobre todo desde el celular.
+- Viven en `frontend/widget/public/assets/muestras/`. Vite copia `public/`
+  sin hashear el nombre, así que caen en `dist/assets/muestras/` y el
+  `handle` de `/assets/*` del Caddyfile **ya las sirve: no hay que tocar la
+  VM.**
+- `GET /api/voces` ahora devuelve `muestra` por voz. La ruta la decide el
+  backend, que ya es dueño del catálogo; el navegador no arma nombres de
+  archivo por convención.
+- En el widget, `elegirYProbarVoz` reproduce el pregrabado **si no hay sala**.
+  Si ya estás conversando reconecta como antes, porque cambiar de voz en vivo
+  exige sala nueva. Un solo `<audio>` reutilizado, si no cinco toques rápidos
+  superponen cinco saludos.
 
-- **Gemini** — el plugin trae `GeminiTTS`
-  (`livekit/plugins/google/beta/gemini_tts.py`) con exactamente nuestras
-  8 voces. Sale directo.
-- **OpenAI** — hay cuota para `gpt-4o-mini-tts` (límite 50) en la
-  suscripción de prueba, pero ese modelo **no tiene `marin` ni `cedar`**,
-  que son solo de Realtime. De las 10, 8 salen por TTS y esas 2 hay que
-  generarlas una vez con una sesión Realtime. **No achicar el catálogo por
-  una limitación de la herramienta de generación.**
+**Decisión que cambió respecto del plan anterior:** las 10 de OpenAI salen
+todas por el deployment `gpt-realtime-mini`, que ya existe y está verificado
+en producción — no por `gpt-4o-mini-tts`. Ese modelo no tiene `marin` ni
+`cedar` y habría hecho falta crear un deployment nuevo en el portal. Un solo
+camino en vez de dos, y cero infraestructura nueva.
+
+**Para destrabarlo hacen falta las dos credenciales locales** (ver §6). Con
+eso: `uv run python scripts/generar_muestras.py`, escuchar las 18, commitear.
+
+> **NO DESPLEGAR EL WIDGET HASTA QUE LOS 18 MP3 EXISTAN.** Sin los archivos,
+> tocar un nombre da 404 y avisa que no se pudo reproducir, y a propósito
+> **no** cae de vuelta a conectar — sería resucitar en silencio el costo que
+> vinimos a matar. O sea que desplegar ahora deja el selector peor que antes.
+> El test `test_muestras.py` saltea mientras la carpeta esté vacía y pasa a
+> exigir las 18 en cuanto aparezca la primera.
 
 Después de esto vienen las capas 2 y 3 (respuestas frecuentes cacheadas y
 sistema híbrido), que necesitan que los tenants existan primero — o sea,
@@ -312,11 +338,22 @@ Cada una tiene un test que la cubre. **No las repitas.**
 | `hidden` contra un `display` de autor | `.orbe__voces` es `display: grid` y le gana al atributo: el menú no se ocultaba |
 | Animar un `conic-gradient` con `transform: rotate()` | Gira la caja entera, no el reflejo. Se anima el ángulo con `@property` |
 | `gpt-realtime-2.1-mini` en suscripción de prueba | Cuota 0 → `InsufficientQuota`. El único con cuota es `gpt-realtime-mini` |
+| Un `<audio>` nuevo por cada preescucha | Cinco toques rápidos superponen cinco saludos. Se reutiliza uno solo y se corta el anterior |
+| Caer a `conectar()` si la muestra no carga | Resucita en silencio el costo que 3.5 vino a matar. Si falla, se elige la voz y se avisa, nada más |
+| Usar el endpoint de administración de Azure con la key de datos | Da 401 y parece clave inválida. Para saber si un deployment existe, llamarlo directo |
 
 ---
 
 ## 6. Lo que Sergio tiene pendiente
 
+- **Reautenticar gcloud** — `gcloud auth application-default login`. La
+  credencial local venció y Vertex AI rechaza con `RefreshError:
+  Reauthentication is needed`. Bloquea grabar las 8 muestras de Gemini (3.5)
+- **Revisar la clave de Azure del `.env` local** — da 401 en las tres
+  superficies de la API (administración, datos y WebSocket) contra el
+  endpoint y el deployment correctos, y mide 84 caracteres, que no es el
+  largo habitual de una key de Azure OpenAI. Producción anda, así que es la
+  copia local la que está mal. Bloquea grabar las 10 de OpenAI (3.5)
 - **Rotar la contraseña de Supabase** — quedó expuesta en el chat
 - **Elegir un `voice_id` real de Fish para `demo_capilar`**, para poder
   validar a oído que cada tenant habla con su propia voz (gate de la Fase 8)
@@ -340,7 +377,11 @@ Del `CLAUDE.md` de la bóveda y del contexto maestro:
 - **Verificá que un repo o API exista** —la URL exacta, el último commit—
   antes de integrarlo. Nunca de memoria.
 - **Preguntá antes de cualquier acción destructiva.**
-- **El repositorio es PÚBLICO.** Ninguna clave, ninguna muestra de voz.
+- **El repositorio es PÚBLICO.** Ninguna clave. Ninguna muestra de voz
+  **clonada ni de persona real** — VOZ-003 y todo lo que tenga registro de
+  consentimiento se queda afuera. Los saludos pregrabados de 3.5 sí van al
+  repo: son voces stock de Google y OpenAI que ya suenan públicamente en el
+  widget, no hay nada que filtrar y así el deploy no depende de tener claves.
 - **Nunca `--dangerously-skip-permissions`.**
 - **Todo lo visual, responsive.** Probar en 360×560, 360×640 y 390×844.
 - **No tomar capturas ni levantar servidores durante la implementación.**

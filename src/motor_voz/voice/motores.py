@@ -116,6 +116,21 @@ def catalogo_de_voces(motor: str) -> tuple[dict[str, Voz], str]:
     return {}, ""
 
 
+def ruta_de_muestra(motor: str, clave: str) -> str:
+    """Donde vive el saludo pregrabado de una voz, relativo al widget.
+
+    Antes, tocar un nombre en el selector reconectaba la sesion entera y se
+    pagaba una sintesis; con 10 voces, un curioso quemaba 10 saludos en
+    medio minuto. Ahora suena este archivo y cuesta cero.
+
+    Relativa a proposito: el widget la resuelve contra su propio origen, asi
+    sirve igual en local que en voz.quantumhive.com.ar. Los genera
+    `scripts/generar_muestras.py` y `tests/test_muestras.py` verifica que no
+    falte ninguna.
+    """
+    return f"assets/muestras/{motor}-{clave}.mp3"
+
+
 class MotorNoDisponible(RuntimeError):
     """El motor pedido existe pero le faltan credenciales para funcionar."""
 

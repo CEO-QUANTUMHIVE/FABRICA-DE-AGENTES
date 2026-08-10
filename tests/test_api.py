@@ -167,6 +167,14 @@ class TestVoces:
         assert len(d["voces"]) == 10
         assert all({"voz", "nombre"} <= set(v) for v in d["voces"])
 
+    async def test_cada_voz_trae_la_ruta_de_su_saludo_pregrabado(self, cliente):
+        """Sin `muestra`, el widget vuelve a reconectar para preescuchar y se paga."""
+        c = await cliente()
+        for motor in ("gemini", "openai"):
+            d = await (await c.get(f"/api/voces?motor={motor}")).json()
+            for v in d["voces"]:
+                assert v["muestra"] == motores.ruta_de_muestra(motor, v["voz"])
+
     async def test_el_pipeline_no_tiene_voces_pero_responde_200(self, cliente):
         """Ni error ni 404: el frontend puede pedir sin fijarse el motor."""
         c = await cliente()

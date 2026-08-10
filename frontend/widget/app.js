@@ -122,9 +122,10 @@ function elegirNivel(numero) {
 }
 
 // ---------- voces (solo el motor gemini) ----------
-// Mismo patron que `elegirYProbarVoz` en el original: tocar un nombre lo
-// elige Y lo prueba en el acto — aca reconectando, porque el saludo que
-// dispara Receptor.on_enter en el agente es la prueba.
+// Tocar un nombre lo elige Y lo prueba en el acto, como en el original.
+// Antes la prueba era reconectar, y eso costaba una sintesis por toque: con
+// 10 voces, un curioso quemaba 10 saludos en medio minuto, y el TTS es el
+// 86% del costo variable. Ahora suena un saludo pregrabado y cuesta cero.
 
 // Cada motor tiene su propio catalogo: las voces de Gemini no existen en
 // OpenAI y viceversa. El backend rechaza cruzarlas, asi que el catalogo se
@@ -213,6 +214,10 @@ $('voces-resumen').onclick = () => {
   $('voces-resumen').setAttribute('aria-expanded', String(vocesAbierto));
 };
 
+// Un solo <audio> para todas las preescuchas. Si se creara uno por toque,
+// tocar cinco nombres rapido superpondria cinco saludos.
+const preescucha = new Audio();
+
 function elegirYProbarVoz(voz) {
   vozElegida = voz;
   // Se esconde al elegir, como en el original: el menu no ocupa el chat
@@ -220,7 +225,24 @@ function elegirYProbarVoz(voz) {
   vocesAbierto = false;
   $('voces').hidden = true;
   dibujarVoces();
-  conectar();
+
+  // Ya conversando, la unica forma de cambiar de voz es rehacer la sala: el
+  // saludo del agente con la voz nueva es la prueba de verdad.
+  if (sala) {
+    conectar();
+    return;
+  }
+
+  // Sin sala no se conecta nada: suena el pregrabado. Este es el caso que
+  // sangraba, el visitante que recorre el catalogo antes de hablar.
+  const muestra = voces.find((v) => v.voz === voz)?.muestra;
+  if (!muestra) return;
+  preescucha.pause();
+  preescucha.currentTime = 0;
+  preescucha.src = muestra;
+  // Si el archivo no esta, la voz queda elegida igual. A proposito no se cae
+  // a conectar(): seria resucitar en silencio el costo que vinimos a matar.
+  preescucha.play().catch(() => aviso('No se pudo reproducir la muestra.'));
 }
 
 // ---------- turnos ----------
