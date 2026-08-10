@@ -37,8 +37,13 @@ Se elige con `MOTOR=` en el `.env`, o por sesión desde la demo web.
 | LiveKit self-hosteado | ✅ systemd, `Restart=always`, sobrevive reinicio |
 | DNS + TLS | ✅ `https://voz.quantumhive.com.ar` → 200, Let's Encrypt |
 | Demo web con 3 niveles | ✅ código listo, probado en local |
-| Grafo de conocimiento | ✅ 438 nodos, se regenera solo en cada commit |
-| Tests | ✅ **122 en verde** |
+| API + agente en producción | ✅ VM propia `motor-voz-agente`, systemd (ver 3.1) |
+| Nivel 2 · Gemini Live | ✅ probado contra Vertex AI real (ver 3.2) |
+| Nivel 3 · OpenAI Realtime | ✅ vía Azure, Sergio lo probó (ver 3.3) |
+| Widget embebible | ✅ en `www.quantumhive.com.ar` (ver 3.4) |
+| Selector de voces | ✅ 8 de Gemini + 10 de OpenAI, agrupadas por género |
+| Grafo de conocimiento | ✅ ~600 nodos, se regenera solo en cada commit |
+| Tests | ✅ **142 en verde** |
 
 ### Configuración vigente
 
@@ -50,7 +55,29 @@ FISH_TEMP      1.0
 GCP_PROJECT    bubbly-stone-502214-u7
 GEMINI_MODEL   gemini-live-2.5-flash-native-audio   (nombre de Vertex, NO el de ai.google.dev)
 GCP_LOCATION   us-east4
+VAD_SILENCIO_MS  900     cuanto silencio antes de dar el turno por terminado
+VAD_RELLENO_MS   300
+VAD_UMBRAL       0.6     mas alto = menos sensible. Default de silero: 0.5
 ```
+
+### Infraestructura
+
+```
+livekit-quantumhive   e2-micro GRATIS, us-east1-b    LiveKit + Caddy + estáticos del widget
+motor-voz-agente      e2-medium ~USD 27/mes           API de tokens + agente (IP interna 10.142.0.9)
+landing-quantumhive   Cloud Run, us-central1          www.quantumhive.com.ar
+```
+
+Caddy en `livekit-quantumhive` rutea: `/api/*` → `10.142.0.9:8080`,
+`/widget.js` `/widget.html` `/assets/*` → `/var/www/widget`, el resto →
+LiveKit en `localhost:7880`.
+
+**Azure OpenAI** (nivel 3) vive en una suscripción **distinta** a la de la
+VM: `Azure subscription 1` (`1f885a81-…`), tipo `FreeTrial` con tope de
+gasto **activado**, o sea que no puede pasarse de los USD 200. Recurso
+`quantumhive-voz-openai` en `eastus2`, deployment `gpt-realtime-mini`.
+La otra suscripción (`quantumhive`, la de la VM) es pago por uso **sin
+tope**: no crear recursos ahí por error.
 
 ---
 
@@ -174,25 +201,77 @@ O sea: hay una clave, pero no el recurso. Una clave sin endpoint no sirve.
 Hasta entonces el nivel 3 se ve en el selector pero avisa que no está
 disponible, en vez de intentar conectar y fallar.
 
-### 3.4 Servir el widget
+### 3.4 Servir el widget ← ✅ HECHO (2026-08-09/10)
 
-El playbook promete este fragmento, que **todavía no existe**:
+El fragmento que promete el playbook **ya existe y está instalado** en
+`www.quantumhive.com.ar`:
 
 ```html
-<script src="https://voz.quantumhive.com.ar/widget.js" data-tenant="..." defer></script>
+<script src="https://voz.quantumhive.com.ar/widget.js" data-tenant="quantumhive" defer></script>
 ```
 
-Hay que construir el frontend de `frontend/demo/` como un bundle embebible
-y servirlo desde Caddy.
+Vive en `frontend/widget/` y es un port fiel del orbe de
+`CEO-QUANTUMHIVE/QUANTUM-ASISTENTE-` (rama `agent/navegador-integrado`,
+`apps/desktop/src/orbe/`): mismas clases, misma paleta negro-y-oro, mismo
+halo. Se le sacó todo lo de visión/pantallas, que en una landing no aplica.
 
-### 3.5 Fase 5 — Supabase y multi-tenant
+Arquitectura: `loader.js` (servido como `widget.js`) es un script mínimo
+que solo crea un `<iframe allow="microphone">`; adentro corre `widget.html`
++ `app.js` + `app.css`, aislado del CSS/JS del sitio del cliente. Todo el
+peso vive en `voz.quantumhive.com.ar`, así que actualizar el widget no
+requiere que ningún cliente vuelva a pegar nada.
 
-Proyecto ya creado y verificado: `bcexirhurfigrehfarol`, responde 200 con la
-clave secreta. **Ninguna tabla creada todavía.** El esquema está en el §11
-del spec.
+Se sirve como estático desde `livekit-quantumhive` (`/var/www/widget/`),
+con un `handle` en el `Caddyfile` para `/widget.js`, `/widget.html` y
+`/assets/*`.
+
+Para desplegar una versión nueva: `npm run build` en `frontend/widget/`,
+copiar `dist/*` + `loader.js` (como `widget.js`) a `/var/www/widget/` por
+`scp`, y borrar los assets viejos (el nombre lleva hash, se acumulan).
+
+### 3.5 Muestras de voz pregrabadas ← ARRANCAR POR ACÁ
+
+**Es lo que más plata está sangrando hoy.** Cada vez que un visitante toca
+un nombre para escuchar una voz, se reconecta la sesión entera y se paga
+una síntesis. Con 10 voces por motor, un curioso quema 10 saludos en 30
+segundos. Y el spec ya dice que **el TTS es el 86% del costo variable**
+(§9): el cacheo no es una optimización, es la estrategia central.
+
+Plan: un saludo corto pregrabado por voz, generado una vez, servido como
+estático. Tocar un nombre pasa a costar **cero** y suena al instante.
+
+Ya está verificado lo técnico:
+
+- **Gemini** — el plugin trae `GeminiTTS`
+  (`livekit/plugins/google/beta/gemini_tts.py`) con exactamente nuestras
+  8 voces. Sale directo.
+- **OpenAI** — hay cuota para `gpt-4o-mini-tts` (límite 50) en la
+  suscripción de prueba, pero ese modelo **no tiene `marin` ni `cedar`**,
+  que son solo de Realtime. De las 10, 8 salen por TTS y esas 2 hay que
+  generarlas una vez con una sesión Realtime. **No achicar el catálogo por
+  una limitación de la herramienta de generación.**
+
+Después de esto vienen las capas 2 y 3 (respuestas frecuentes cacheadas y
+sistema híbrido), que necesitan que los tenants existan primero — o sea,
+después de 3.6.
+
+### 3.6 Fases 5-8 — Supabase y multi-tenant
+
+Plan completo y reconciliado con el código de hoy:
+[`docs/superpowers/plans/2026-08-09-motor-voz-fases-5-8.md`](superpowers/plans/2026-08-09-motor-voz-fases-5-8.md).
+Son 10 tareas. **La Task 1 está hecha** (`Config` ya lee las credenciales
+de Supabase, commit `219fadc`); quedan 9.
+
+Proyecto de Supabase creado y verificado: `bcexirhurfigrehfarol`.
+Credenciales en Secret Manager (`motor-voz-supabase-url`,
+`motor-voz-supabase-service-role`) y en el `.env` local y de la VM.
+**Ninguna tabla creada todavía** — eso es la Task 2.
 
 El test de aislamiento entre tenants es **bloqueante**: no se entrega un
 cliente sin que pase.
+
+Ejecución elegida: subagent-driven (un subagente por tarea, revisión entre
+tareas).
 
 ---
 
@@ -226,14 +305,25 @@ Cada una tiene un test que la cubre. **No las repitas.**
 | `scripts/token.py` | Le hacía sombra al módulo `token` de la stdlib |
 | El plugin de Fish fuera del worker | Falla sin `utils.http_context.open()` |
 | Un token de R2 no escribe DNS | Da "Authentication error" sin aclarar por qué |
+| Importar un plugin adentro de la función | `RuntimeError: Plugins must be registered on the main thread`. Los imports de `google`/`openai` van a nivel de módulo en `motores.py` |
+| `min_words: 0`, el default de livekit-agents | Alcanza UNA palabra para interrumpir. Whisper alucina una palabra con ruido → el agente se calla y después le contesta a la nada |
+| Copiar el `.env` local a producción | Tiene las credenciales de `livekit-server --dev` (`devkey`/`secret`, 6 bytes). El agente arranca bien y LiveKit lo rechaza con 401 recién al registrarse |
+| `gcloud run deploy --source .` sin comparar | La carpeta local estaba atrasada y **pisó la landing viva**, borrando la pestaña "Webs inteligentes". Comparar siempre contra el zip de fuente del deploy anterior en GCS |
+| `hidden` contra un `display` de autor | `.orbe__voces` es `display: grid` y le gana al atributo: el menú no se ocultaba |
+| Animar un `conic-gradient` con `transform: rotate()` | Gira la caja entera, no el reflejo. Se anima el ángulo con `@property` |
+| `gpt-realtime-2.1-mini` en suscripción de prueba | Cuota 0 → `InsufficientQuota`. El único con cuota es `gpt-realtime-mini` |
 
 ---
 
 ## 6. Lo que Sergio tiene pendiente
 
 - **Rotar la contraseña de Supabase** — quedó expuesta en el chat
-- **Crear el recurso de Azure OpenAI** para desbloquear el nivel 3
-- **Probar el agente local** con el prompt nuevo, que ya es activo
+- **Elegir un `voice_id` real de Fish para `demo_capilar`**, para poder
+  validar a oído que cada tenant habla con su propia voz (gate de la Fase 8)
+- **Ajustar a oído la sensibilidad del micrófono** si todavía corta rápido
+  o tarda mucho: `VAD_SILENCIO_MS` (hoy 900), `VAD_UMBRAL` (hoy 0.6) y
+  `AGENTE_PALABRAS_INTERRUPCION` (hoy 2). Se cambian en el `.env` de la VM
+  y se reinicia el agente, sin tocar código
 
 ---
 
@@ -241,6 +331,10 @@ Cada una tiene un test que la cubre. **No las repitas.**
 
 Del `CLAUDE.md` de la bóveda y del contexto maestro:
 
+- **El grafo primero, siempre.** Ver [`CLAUDE.md`](../CLAUDE.md) en la raíz:
+  `graphify query` antes que grep, comandos que devuelvan lo mínimo, y
+  subagentes con modelo barato para lo mecánico. Son reglas de costo, no
+  de estilo: el plan semanal se va en dos días si no se respetan.
 - **Un paso a la vez.** Si el anterior no está estable, no se avanza.
 - **`git push` antes de dar algo por terminado.**
 - **Verificá que un repo o API exista** —la URL exacta, el último commit—
