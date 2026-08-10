@@ -30,11 +30,11 @@ let vocesAbierto = false;
 let temporizador = null;
 let microfonoActivo = false;
 
-// Nivel 3 (openai / "realismo extremo") existe en el catalogo pero todavia
-// no tiene credenciales de Azure en produccion. En vez de intentar conectar
-// y fallar, se muestra deshabilitado con una nota. El dia que este listo,
-// se saca esta linea y nada mas.
-const NIVELES_LISTOS = new Set([1, 2]);
+// Los tres niveles estan operativos. El 3 (openai / "realismo extremo")
+// se habilito el 2026-08-10 al crear el recurso de Azure OpenAI con el
+// deployment gpt-realtime-mini. Si alguno se cae, sacarlo de este Set lo
+// muestra deshabilitado con una nota en vez de fallar al conectar.
+const NIVELES_LISTOS = new Set([1, 2, 3]);
 const ETIQUETAS = { 1: 'Clonación', 2: 'Voz humana', 3: 'Realismo extremo' };
 
 function estado(clave) {
