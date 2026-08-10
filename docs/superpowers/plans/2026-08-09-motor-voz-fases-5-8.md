@@ -26,7 +26,21 @@ Estas tres dependen de que el tenant ya se resuelva (este plan), así que no pue
 Leído el código real, no el plan viejo:
 
 - `voice/agente.py` arma la sesión llamando a `motores.componentes(config)` y construye `Receptor(config.motor)`, que llama a `brain/prompt.construir(motor=motor, canal="web")` con una identidad fija (`IDENTIDAD`, constante).
-- El nombre de sala hoy es `demo-{motor}-{aleatorio}` (ej. `demo-pipeline-a1b2c3`), parseado por `agente.py:motor_de_la_sala`. **Este plan lo extiende a `demo-{tenant}-{motor}-{aleatorio}`** — cambia el formato, así que hay que actualizar el parser y el test que lo cubre (`tests/test_api.py::test_el_motor_va_en_el_nombre_de_la_sala`).
+- **El nombre de sala cambió después de escribir este plan** (commit `c0acfa8`, selector de voces de Gemini). Hoy es `demo-{motor}-{voz}-{aleatorio}` — ej. `demo-gemini-Leda-a1b2c3` — con dos parsers en `agente.py`: `motor_de_la_sala` (lee `partes[1]`) y `voz_de_la_sala` (lee `partes[2]`).
+
+  **Este plan lo extiende a `demo-{tenant}-{motor}-{voz}-{aleatorio}`**, o sea:
+
+  ```text
+  demo - quantumhive -  gemini  -  Leda  -  a1b2c3
+   [0]      [1]           [2]       [3]      [4]
+          tenant         motor      voz    aleatorio
+  ```
+
+  Los slugs de tenant no llevan guiones (`quantumhive`, `demo_capilar` usan guión bajo), así que partir por `-` sigue siendo seguro. Consecuencias, todas cubiertas en la Task 9:
+  - `motor_de_la_sala` pasa de `partes[1]` a `partes[2]`.
+  - `voz_de_la_sala` pasa de `partes[2]` a `partes[3]`.
+  - `tenant_de_la_sala` (Task 5) lee `partes[1]` — ya está escrito así, no cambia.
+  - `tests/test_api.py::test_el_motor_va_en_el_nombre_de_la_sala` afirma el formato viejo y hay que actualizarlo.
 - `api/servidor.py` no sabe nada de tenants: emite token con `nivel` únicamente.
 - `config.py` no tiene campos de Supabase, aunque `.env.example` los menciona vacíos.
 - No existe ningún cliente de Supabase en el repo. No existe proyecto de Supabase para este repo (los secrets de Secret Manager `motor-voz-*` no incluyen Supabase; el que existe, `hermes-supabase-service-role`, es de otro proyecto).
@@ -1152,23 +1166,27 @@ def _pipeline(config: Config, voice_id_override: str = "") -> dict[str, Any]:
     }
 ```
 
-Y agregar `voice_id_override: str = ""` como parámetro (sin usarlo) a `_gemini` y `_openai`:
+Y agregar `voice_id_override: str = ""` como parámetro (sin usarlo) a `_gemini` y `_openai`.
+
+> **No mover los imports adentro de las funciones.** El commit `25603f3`
+> los subió a nivel de módulo justamente porque livekit-agents exige que
+> los plugins se registren en el hilo principal: con el import adentro,
+> la primera sesión de Gemini revienta con `RuntimeError: Plugins must be
+> registered on the main thread`. Ya pasó en producción. `google` y
+> `openai_realtime` **ya están importados arriba** en el archivo — usarlos
+> desde ahí.
 
 ```python
 def _gemini(config: Config, voice_id_override: str = "") -> dict[str, Any]:
-    from livekit.plugins import google
-
     return {"llm": google.beta.realtime.RealtimeModel(**opciones_gemini(config))}
 ```
 
 ```python
 def _openai(config: Config, voice_id_override: str = "") -> dict[str, Any]:
-    from livekit.plugins.openai import realtime
-
     opts = opciones_openai(config)
     if opts.pop("_azure", False):
-        return {"llm": realtime.RealtimeModel.with_azure(**opts)}
-    return {"llm": realtime.RealtimeModel(**opts)}
+        return {"llm": openai_realtime.RealtimeModel.with_azure(**opts)}
+    return {"llm": openai_realtime.RealtimeModel(**opts)}
 ```
 
 - [ ] **Step 4: Correr para verificar que pasa**
@@ -1236,7 +1254,9 @@ Cambiar `test_el_motor_va_en_el_nombre_de_la_sala`:
         c = await cliente()
         for nivel, motor in [(1, "pipeline"), (2, "gemini"), (3, "openai")]:
             d = await (await c.post("/api/token", json={"nivel": nivel})).json()
+            # demo-<tenant>-<motor>-<voz>-<aleatorio>
             assert d["sala"].startswith(f"demo-quantumhive-{motor}-")
+            assert d["sala"].split("-")[3] == d["voz"]
 ```
 
 - [ ] **Step 3: Escribir los tests nuevos que fallan, para el flujo de tenant**
@@ -1341,7 +1361,7 @@ async def emitir_token(peticion: web.Request) -> web.Response:
         logger.info("limite alcanzado para %s", ip)
         return _cors(web.json_response({"error": str(e)}, status=429))
 
-    sala = f"demo-{tenant.slug}-{nivel.motor}-{secrets.token_hex(6)}"
+    sala = f"demo-{tenant.slug}-{nivel.motor}-{voz}-{secrets.token_hex(6)}"
     identidad = f"visitante-{secrets.token_hex(4)}"
 
     token = (
@@ -1352,7 +1372,14 @@ async def emitir_token(peticion: web.Request) -> web.Response:
         # navegador. Ademas el tenant queda fijado en el nombre de sala
         # (ver brain/tenants/resolver.py), que VideoGrants restringe.
         .with_metadata(
-            json.dumps({"motor": nivel.motor, "nivel": nivel.numero, "tenant": tenant.slug})
+            json.dumps(
+                {
+                    "motor": nivel.motor,
+                    "nivel": nivel.numero,
+                    "voz": voz,
+                    "tenant": tenant.slug,
+                }
+            )
         )
         .with_grants(
             api.VideoGrants(
@@ -1424,18 +1451,34 @@ from motor_voz.brain.tenants.resolver import tenant_de_la_sala
 
 Quitar el import de `construir` de `brain.prompt` (ya no se usa directo acá, lo usa `contexto.py`).
 
-Cambiar `motor_de_la_sala` al nuevo formato de 4 partes:
+Correr los dos parsers un lugar a la derecha, porque el tenant entra al
+principio: el formato pasa de `demo-<motor>-<voz>-<aleatorio>` a
+`demo-<tenant>-<motor>-<voz>-<aleatorio>`.
 
 ```python
 def motor_de_la_sala(nombre: str, por_defecto: str) -> str:
-    """Extrae el motor del nombre de sala `demo-<tenant>-<motor>-<aleatorio>`.
+    """Extrae el motor de `demo-<tenant>-<motor>-<voz>-<aleatorio>`.
 
     Si el nombre no sigue ese formato — una sala creada a mano, por ejemplo —
     se usa el motor de la configuracion.
     """
     partes = nombre.split("-")
-    if len(partes) >= 4 and partes[0] == "demo" and partes[2] in motores.MOTORES:
+    if len(partes) >= 5 and partes[0] == "demo" and partes[2] in motores.MOTORES:
         return partes[2]
+    return por_defecto
+
+
+def voz_de_la_sala(nombre: str, por_defecto: str) -> str:
+    """Extrae la voz de Gemini de `demo-<tenant>-<motor>-<voz>-<aleatorio>`.
+
+    Solo importa cuando el motor es gemini; en los demas el campo esta
+    igual (servidor.py siempre lo manda) pero no se usa. Se valida contra
+    el catalogo real: una sala armada a mano no puede pedirle a Vertex una
+    voz que no existe.
+    """
+    partes = nombre.split("-")
+    if len(partes) >= 5 and partes[0] == "demo" and partes[3] in motores.VOCES_GEMINI:
+        return partes[3]
     return por_defecto
 ```
 
@@ -1460,19 +1503,25 @@ Y en `entrypoint`, después de resolver `config` y antes de armar la sesión, re
 ```python
 @server.rtc_session()
 async def entrypoint(ctx: JobContext) -> None:
-    config = dataclasses.replace(cargar(), motor=motor_de_la_sala(ctx.room.name, cargar().motor))
+    base = cargar()
+    config = dataclasses.replace(
+        base,
+        motor=motor_de_la_sala(ctx.room.name, base.motor),
+        gemini_voice=voz_de_la_sala(ctx.room.name, base.gemini_voice),
+    )
     tenant_slug = tenant_de_la_sala(ctx.room.name)
     tenant = await repositorio.obtener_tenant(config, tenant_slug)
     ctx.log_context_fields = {"room": ctx.room.name, "motor": config.motor, "tenant": tenant.slug}
 
     logger.info(
-        "sesion nueva | tenant=%s plan=%s motor=%s | voz=%s speed=%s temp=%s",
+        "sesion nueva | tenant=%s plan=%s motor=%s | voz=%s speed=%s temp=%s | voz_gemini=%s",
         tenant.slug,
         motores.PLANES.get(config.motor, "?"),
         config.motor,
         (tenant.voz.voice_id if tenant.voz else config.fish_voice_id)[:12] or "(default)",
         config.fish_speed,
         config.fish_temperature,
+        config.gemini_voice,
     )
 
     extras: dict = {}
