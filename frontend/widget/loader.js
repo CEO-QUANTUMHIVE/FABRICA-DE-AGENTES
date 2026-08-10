@@ -34,8 +34,15 @@
     return window.innerWidth < ESTRECHO;
   }
 
+  // Cerrado, el iframe tiene que dar para la onda mas grande del halo, que
+  // se expande a 1.35 sobre el orbe mas su margen. Si queda mas chico, la
+  // onda se recorta contra el borde y se ve un circulo cortado.
+  //   escritorio  orbe 150 + margen 36 = 186 -> x1.35 = 251
+  //   celular     orbe  88 + margen 24 = 112 -> x1.35 = 151
+  // Al alto se le suma el cartel de abajo y el aire que la onda necesita
+  // por arriba del orbe.
   function tamanoCerrado() {
-    return esCelular() ? { ancho: 150, alto: 145 } : { ancho: 240, alto: 230 };
+    return esCelular() ? { ancho: 190, alto: 175 } : { ancho: 262, alto: 250 };
   }
 
   function tamanoAbierto() {

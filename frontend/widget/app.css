@@ -358,7 +358,7 @@ button:disabled {
 
 .orbe__vida {
   position: absolute;
-  inset: -22px;
+  inset: -18px;
   pointer-events: none;
   /* Detras del logo, no encima. */
   z-index: 0;
@@ -402,7 +402,10 @@ button:disabled {
     opacity: 0.85;
   }
   100% {
-    transform: scale(1.45);
+    /* No pasarse de 1.35: la onda tiene que entrar entera adentro del
+       iframe, que mide lo justo para no tapar la pagina del cliente. Con
+       1.45 se recortaba contra el borde y se veia un circulo cortado. */
+    transform: scale(1.35);
     opacity: 0;
   }
 }
@@ -743,13 +746,13 @@ button:disabled {
 
 @media (max-width: 400px), (max-height: 560px) {
   .orbe__esfera {
-    width: 96px;
-    height: 96px;
-    --qh-radio-vida: 50px;
+    width: 88px;
+    height: 88px;
+    --qh-radio-vida: 46px;
   }
 
   .orbe__vida {
-    inset: -14px;
+    inset: -12px;
   }
 
   .orbe--abierto .orbe__esfera {
@@ -757,9 +760,12 @@ button:disabled {
     height: 38px;
   }
 
+  /* El cartel llegaba a medir casi lo mismo que el iframe entero y se
+     recortaba (va con nowrap a proposito, para que no se parta en dos). */
   .orbe__invitacion {
-    font-size: 11px;
-    padding: 4px 10px;
+    font-size: 10px;
+    padding: 4px 9px;
+    letter-spacing: 0;
   }
 
   .orbe--abierto {
