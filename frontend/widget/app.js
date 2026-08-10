@@ -75,7 +75,7 @@ async function cargarNiveles() {
     ];
   }
   dibujarNiveles();
-  mostrarSelectorDeVoces(nivelElegido === 2);
+  mostrarSelectorDeVoces(nivelElegido !== 1);
 }
 
 function dibujarNiveles() {
@@ -105,10 +105,15 @@ function elegirNivel(numero) {
   for (const b of $('motores').children) {
     b.setAttribute('aria-checked', String(Number(b.dataset.nivel) === numero));
   }
-  mostrarSelectorDeVoces(numero === 2);
-  // Cambiar de motor fija uno nuevo al reconectar: no se mezclan motores
-  // dentro de una misma sala.
-  if (sala) conectar();
+  // El pipeline (nivel 1) no tiene catalogo: su voz es la clonada del
+  // tenant, no se elige de una lista.
+  mostrarSelectorDeVoces(numero !== 1);
+  cargarVoces().then(() => {
+    // Cambiar de motor fija uno nuevo al reconectar: no se mezclan motores
+    // dentro de una misma sala. Se reconecta despues de cargar el catalogo
+    // para no pedir el token con una voz del motor anterior.
+    if (sala) conectar();
+  });
 }
 
 // ---------- voces (solo el motor gemini) ----------
@@ -116,14 +121,23 @@ function elegirNivel(numero) {
 // elige Y lo prueba en el acto — aca reconectando, porque el saludo que
 // dispara Receptor.on_enter en el agente es la prueba.
 
+// Cada motor tiene su propio catalogo: las voces de Gemini no existen en
+// OpenAI y viceversa. El backend rechaza cruzarlas, asi que el catalogo se
+// recarga cada vez que se cambia de motor.
+const MOTOR_DE_NIVEL = { 1: 'pipeline', 2: 'gemini', 3: 'openai' };
+
 async function cargarVoces() {
+  const motor = MOTOR_DE_NIVEL[nivelElegido] ?? 'gemini';
   try {
-    const r = await fetch(`${API}/api/voces-gemini`);
+    const r = await fetch(`${API}/api/voces?motor=${motor}`);
     voces = (await r.json()).voces;
   } catch {
     voces = [];
   }
-  if (voces.length && !vozElegida) vozElegida = voces[0].voz;
+  // Al cambiar de motor la voz anterior ya no existe en el catalogo nuevo.
+  if (!voces.some((v) => v.voz === vozElegida)) {
+    vozElegida = voces.length ? voces[0].voz : '';
+  }
   dibujarVoces();
 }
 

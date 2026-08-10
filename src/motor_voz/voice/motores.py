@@ -32,8 +32,10 @@ from typing import Any
 # que se pide ese motor el import ocurre DENTRO del hilo del job, y
 # revienta con "Plugins must be registered on the main thread". Verificado
 # el 2026-08-10 con el traceback real en produccion.
+from google.genai import types as genai_types
 from livekit.plugins import google, silero
 from livekit.plugins.openai import realtime as openai_realtime
+from openai.types.realtime.realtime_audio_input_turn_detection import ServerVad
 
 from motor_voz.config import Config
 from motor_voz.voice.providers import llm as proveedor_llm
@@ -122,8 +124,15 @@ def _pipeline(config: Config) -> dict[str, Any]:
         "llm": proveedor_llm.crear(config),
         "tts": proveedor_tts.crear(config),
         # Groq Whisper no hace endpointing: sin VAD no hay deteccion de turno
-        # ni interrupcion.
-        "vad": silero.VAD.load(),
+        # ni interrupcion. Los defaults de silero (0.55 s de silencio, umbral
+        # 0.5) cortan con cualquier ruido de fondo: el agente se callaba
+        # creyendo que le hablaban. Los tres motores usan los mismos valores
+        # de Config para que la sensibilidad se sienta igual en los tres.
+        "vad": silero.VAD.load(
+            min_silence_duration=config.vad_silencio_ms / 1000,
+            prefix_padding_duration=config.vad_relleno_ms / 1000,
+            activation_threshold=config.vad_umbral,
+        ),
     }
 
 
@@ -136,6 +145,17 @@ def opciones_gemini(config: Config) -> dict[str, Any]:
         "model": config.gemini_model,
         "voice": config.gemini_voice,
         "temperature": config.gemini_temperature,
+        # Sensibilidad baja para que no se auto-interrumpa al escucharse por
+        # los parlantes del visitante, ni con ruido de fondo. Mismo criterio
+        # que QUANTUM-ASISTENTE-, que ya habia pasado por este problema.
+        "realtime_input_config": genai_types.RealtimeInputConfig(
+            automatic_activity_detection=genai_types.AutomaticActivityDetection(
+                start_of_speech_sensitivity=genai_types.StartSensitivity.START_SENSITIVITY_LOW,
+                end_of_speech_sensitivity=genai_types.EndSensitivity.END_SENSITIVITY_LOW,
+                prefix_padding_ms=config.vad_relleno_ms,
+                silence_duration_ms=config.vad_silencio_ms,
+            )
+        ),
     }
     if config.gcp_project.strip():
         return base | {
@@ -160,7 +180,18 @@ def opciones_openai(config: Config) -> dict[str, Any]:
 
     Con `OPENAI_API_KEY` va directo a OpenAI, contra tarjeta.
     """
-    base: dict[str, Any] = {"voice": config.openai_voice}
+    base: dict[str, Any] = {
+        "voice": config.openai_voice,
+        # Mismo motivo que en Gemini: el umbral por defecto corta con
+        # cualquier ruido. Aca la sensibilidad es un numero (mas alto =
+        # menos sensible) en vez de un enum.
+        "turn_detection": ServerVad(
+            type="server_vad",
+            threshold=config.vad_umbral,
+            prefix_padding_ms=config.vad_relleno_ms,
+            silence_duration_ms=config.vad_silencio_ms,
+        ),
+    }
     if config.azure_endpoint.strip():
         return base | {
             "_azure": True,

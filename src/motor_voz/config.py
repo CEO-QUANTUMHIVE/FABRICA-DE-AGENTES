@@ -57,6 +57,11 @@ class Config:
     max_sesiones_por_ip_hora: int
     max_sesiones_por_dia: int
     api_puerto: int
+    # Cuando el agente decide que el visitante empezo y termino de hablar.
+    # Se ajustan a oido, no por calculo, y valen para los tres motores.
+    vad_silencio_ms: int
+    vad_relleno_ms: int
+    vad_umbral: float
     # Plan comercial: que motor de conversacion usa este tenant.
     motor: str
     # Plan medio - Gemini Live. Con gcp_project va por Vertex AI y consume
@@ -109,6 +114,14 @@ def cargar(entorno: dict[str, str] | None = None) -> Config:
         max_sesiones_por_ip_hora=int(e.get("MAX_SESSIONS_PER_IP_HOUR", "20")),
         max_sesiones_por_dia=int(e.get("MAX_SESSIONS_PER_DAY", "300")),
         api_puerto=int(e.get("PORT") or e.get("API_PUERTO") or "8080"),
+        # Los defaults de los tres motores cortan demasiado rapido: con un
+        # ruido de fondo el agente se callaba creyendo que le hablaban.
+        # 900 ms de silencio antes de dar el turno por terminado y un
+        # umbral mas alto que el default (0.5) son los valores que ya venia
+        # usando QUANTUM-ASISTENTE- con Gemini Live.
+        vad_silencio_ms=int(e.get("VAD_SILENCIO_MS", "900")),
+        vad_relleno_ms=int(e.get("VAD_RELLENO_MS", "300")),
+        vad_umbral=float(e.get("VAD_UMBRAL", "0.6")),
         motor=e.get("MOTOR", "pipeline").strip().lower(),
         gemini_model=e.get("GEMINI_MODEL", "gemini-live-2.5-flash-native-audio"),
         gemini_voice=e.get("GEMINI_VOICE", "Puck"),
