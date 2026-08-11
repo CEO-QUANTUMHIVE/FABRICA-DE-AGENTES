@@ -358,6 +358,17 @@ el aislamiento a oído en local.
 
 Lo que sigue son las Fases 9 y 10, cada una con su plan propio.
 
+**Falta algo que no cubre ninguna de las dos: autenticación.** El modo interno
+del agente —el que habla de métricas en el panel del cliente— solo lo puede
+abrir el dueño de ese negocio. Hoy en este repo **no hay login de ningún
+tipo**: `POST /api/token` no le pide identidad a nadie, y el aislamiento por
+dominio sirve para el modo público pero no alcanza para el interno, donde hay
+datos del negocio en juego.
+
+La Fase 9 resuelve *qué herramientas* tiene cada modo. No resuelve *quién
+tiene derecho* a pedir el modo interno. Eso hay que planificarlo aparte, y va
+antes del panel de control.
+
 ---
 
 ## 4. Decisiones tomadas — no reabrir sin motivo
@@ -371,7 +382,8 @@ Lo que sigue son las Fases 9 y 10, cada una con su plan propio.
 | Normalizar texto en código | Pedírselo al LLM falla, y el error sale al aire |
 | API en la VM, no Cloud Run | Evita aflojar la política de organización, sin CORS, gratis |
 | Cloudflare para Web Factory, no para esto | Pages + for SaaS resuelven dominios de clientes. Otro producto |
-| `brain/` sale a un repo propio (2026-08-10) | Va a ser el pilar donde vivan todos los agentes de QuantumHive, los propios y los de clientes. Hoy el asistente de escritorio tendría que importar `motor_voz.brain` para algo que no tiene que ver con voz. Se hace **después** de cerrar las Fases 5-8, y sale barato porque todo el acceso a datos pasa por un solo archivo |
+| ~~`brain/` sale a un repo propio~~ **revertida el 2026-08-10** | Se había decidido sacarlo pensando que ahí iban a vivir *todos* los agentes de QuantumHive. No es así: acá viven los **agentes conversacionales de negocio** —los de clientes y el nuestro—, y eso es exactamente lo que este repo es. Los scrapers y los agentes de desarrollo no tienen voz ni servicios ni rubro: van en Quantum Core, que es el orquestador. El spec ya lo decía en su §1 ("no es un orquestador ni un reemplazo de Quantum Core"). **El repo queda entero.** |
+| Un agente por cliente, con dos modos (2026-08-10) | Modo público para atender visitantes y modo interno para métricas, en el panel de control del cliente. Un solo agente y un solo cerebro por negocio; lo que cambia son las herramientas y el contexto. Es lo que la Fase 9 llama `registry_publico` y `registry_receptor` |
 
 ---
 
