@@ -16,8 +16,11 @@ from __future__ import annotations
 
 from supabase import AsyncClient, acreate_client
 
+from datetime import datetime, timedelta, timezone
+
 from motor_voz.brain.tenants.modelos import (
     DominioTenant,
+    Lead,
     PerfilTenant,
     Servicio,
     Tenant,
@@ -32,6 +35,64 @@ class TenantNoEncontrado(RuntimeError):
 
 async def _cliente(config: Config) -> AsyncClient:
     return await acreate_client(config.supabase_url, config.supabase_service_role_key)
+
+
+async def guardar_lead(
+    config: Config,
+    *,
+    tenant_id: str,
+    nombre: str = "",
+    contacto: str = "",
+    interes: str = "",
+    sala: str = "",
+) -> None:
+    """Guarda un interesado.
+
+    `tenant_id` es obligatorio y va por nombre, no posicional: un lead
+    guardado contra el negocio equivocado es el dato de un cliente adentro de
+    la lista de otro.
+    """
+    cliente = await _cliente(config)
+    await (
+        cliente.table("leads")
+        .insert(
+            {
+                "tenant_id": tenant_id,
+                "nombre": nombre,
+                "contacto": contacto,
+                "interes": interes,
+                "sala": sala,
+            }
+        )
+        .execute()
+    )
+
+
+async def leads_de(config: Config, tenant_id: str, *, desde_dias: int = 30) -> list[Lead]:
+    """Los leads de UN tenant, del mas nuevo al mas viejo.
+
+    El filtro por tenant no tiene default ni se puede omitir: no existe forma
+    de llamar a esto y traer los de todos.
+    """
+    desde = (datetime.now(timezone.utc) - timedelta(days=desde_dias)).isoformat()
+    cliente = await _cliente(config)
+    resp = (
+        await cliente.table("leads")
+        .select("nombre, contacto, interes, created_at")
+        .eq("tenant_id", tenant_id)
+        .gte("created_at", desde)
+        .order("created_at", desc=True)
+        .execute()
+    )
+    return [
+        Lead(
+            nombre=fila.get("nombre", ""),
+            contacto=fila.get("contacto", ""),
+            interes=fila.get("interes", ""),
+            creado_en=fila.get("created_at", ""),
+        )
+        for fila in (resp.data or [])
+    ]
 
 
 async def tenant_de_dominio(config: Config, dominio: str) -> DominioTenant | None:

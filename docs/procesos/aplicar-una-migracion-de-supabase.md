@@ -28,6 +28,39 @@ supabase db push
 Si hay que corregir un dato, se crea la siguiente. La `0002` existe justamente
 por eso: la `0001` sembró un `voice_id` que era un placeholder.
 
+## Si dice `no such host` y hace un rato andaba
+
+**El host directo `db.<ref>.supabase.co` es IPv6-only.** Si tu conexión pierde
+la salida IPv6 —cambia la red, el proveedor, o el entorno donde corrés— el
+CLI dice `hostname resolving error: no such host` aunque el DNS resuelva
+perfecto. Pasó el 2026-08-11: a la mañana andaba y a la tarde no.
+
+Cómo confirmarlo en diez segundos:
+
+```powershell
+Resolve-DnsName 'db.TU-REF.supabase.co' -Type AAAA
+Test-NetConnection -ComputerName 'LA-IPv6-QUE-SALIO' -Port 5432 -InformationLevel Quiet
+```
+
+Si resuelve pero el puerto da `False`, es la salida IPv6, no el DNS ni la
+contraseña.
+
+**El camino IPv4 es el pooler**, pero necesitás **la región del proyecto**, y
+el connection string del pooler no está en el archivo de credenciales: sale
+del dashboard, en Connect. Adivinar la región no sirve — todas responden
+`tenant/user not found` menos la correcta.
+
+```
+postgresql://postgres.<REF>:<PWD>@aws-0-<REGION>.pooler.supabase.com:5432/postgres
+```
+
+**Anotá la región del proyecto en el archivo de credenciales.** Sin eso, el
+día que se caiga IPv6 no hay forma de aplicar una migración.
+
+La API por HTTPS (la que usan el motor y los tests) **no se ve afectada**: va
+por IPv4 contra `https://<ref>.supabase.co`. Que los tests de integración
+pasen no quiere decir que puedas migrar.
+
 ## Lo que ya nos rompió
 
 **El MCP de Supabase no ve este proyecto.** Su token está scopeado por

@@ -30,6 +30,20 @@ class VozTenant:
 
 
 @dataclass(frozen=True)
+class Lead:
+    """Alguien que dejo su contacto hablando con el agente de un negocio.
+
+    No lleva `tenant_id`: quien lo pide ya sabe de que negocio es, porque lo
+    pidio filtrando por el. Llevarlo invitaria a pasarlo de un lado a otro.
+    """
+
+    nombre: str
+    contacto: str
+    interes: str
+    creado_en: str
+
+
+@dataclass(frozen=True)
 class DominioTenant:
     """Un dominio registrado y de quien es.
 
