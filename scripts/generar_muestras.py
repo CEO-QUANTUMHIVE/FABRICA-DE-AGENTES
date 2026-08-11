@@ -70,6 +70,11 @@ def _a_mp3(pcm: bytes, salida: Path) -> None:
         [
             "ffmpeg", "-hide_banner", "-loglevel", "error",
             "-f", "s16le", "-ar", str(FRECUENCIA), "-ac", "1", "-i", "-",
+            # Sin normalizar, las voces salen con hasta 15 dB de diferencia
+            # entre si (medido: alloy -18,6 dB contra sage -33,5 dB). El
+            # selector existe para comparar voces, y una que suena mas bajo
+            # se juzga peor aunque no lo sea. -16 LUFS es el estandar de voz.
+            "-af", "loudnorm=I=-16:TP=-1.5:LRA=11",
             "-codec:a", "libmp3lame", "-b:a", "48k",
             "-y", str(salida),
         ],

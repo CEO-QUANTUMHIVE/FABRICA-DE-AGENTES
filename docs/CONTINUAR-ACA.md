@@ -43,7 +43,7 @@ Se elige con `MOTOR=` en el `.env`, o por sesión desde la demo web.
 | Widget embebible | ✅ en `www.quantumhive.com.ar` (ver 3.4) |
 | Selector de voces | ✅ 8 de Gemini + 10 de OpenAI, agrupadas por género |
 | Grafo de conocimiento | ✅ ~600 nodos, se regenera solo en cada commit |
-| Tests | ✅ **180 en verde**, 1 salteado (muestras de OpenAI), 5 deseleccionados |
+| Tests | ✅ **181 en verde**, ninguno salteado, 5 deseleccionados |
 | Multi-tenant | ✅ dos tenants en Supabase, aislamiento probado contra la base real |
 
 ### Configuración vigente
@@ -230,7 +230,7 @@ Para desplegar una versión nueva: `npm run build` en `frontend/widget/`,
 copiar `dist/*` + `loader.js` (como `widget.js`) a `/var/www/widget/` por
 `scp`, y borrar los assets viejos (el nombre lleva hash, se acumulan).
 
-### 3.5 Muestras de voz pregrabadas ← 8 DE 18 GRABADAS (2026-08-10)
+### 3.5 Muestras de voz pregrabadas ← ✅ HECHO, LAS 18 (2026-08-10)
 
 **Era lo que más plata estaba sangrando.** Cada vez que un visitante tocaba
 un nombre para escuchar una voz, se reconectaba la sesión entera y se pagaba
@@ -238,9 +238,11 @@ una síntesis. Con 10 voces por motor, un curioso quemaba 10 saludos en 30
 segundos. Y el spec ya dice que **el TTS es el 86% del costo variable**
 (§9): el cacheo no es una optimización, es la estrategia central.
 
-**El cableado está terminado y probado. Las 8 de Gemini están grabadas
-(~4,7 s cada una, 28 KB, volumen parejo entre −18 y −20 dB). Faltan las 10 de
-OpenAI, trabadas en la clave de Azure (§6).**
+**Terminado. Las 18 grabadas, versionadas y normalizadas** a −16 LUFS, entre
+3,5 y 4,9 segundos, ~25 KB cada una. Sin normalizar salían con hasta 15 dB de
+diferencia entre sí y la más baja parecía peor voz cuando solo sonaba menos.
+
+Falta desplegar el widget para que se vean.
 
 - [`scripts/generar_muestras.py`](../scripts/generar_muestras.py) — one-shot
   e idempotente. Lee el catálogo de `motores.py`, así que no hay una segunda
@@ -368,6 +370,9 @@ Cada una tiene un test que la cubre. **No las repitas.**
 | Pedir las 8 voces de Gemini de corrido | `RESOURCE_EXHAUSTED` en la séptima. El modelo preview tiene cuota corta: dos segundos entre voces alcanzan |
 | Suponer que el MCP de Supabase ve todos los proyectos | Su token está scopeado por organización. `bcexirhurfigrehfarol` no aparece: lista otros cuatro y da "access denied" sin decir que es de scope |
 | **Aplicar un snippet de un plan sin leer el archivo real** | Un plan de un día atrás ya puede estar atrasado. Los de las Fases 5-8 borraban, entre los cuatro, la calibración del VAD, la ruta `/api/voces`, la config de interrupción y la resolución de voz. Leer el archivo primero, siempre |
+| **Una variable de entorno de usuario de Windows le gana al `.env`** | `python-dotenv` no pisa lo que ya existe. `AZURE_OPENAI_API_KEY` estaba definida a nivel usuario con la `key1` muerta, así que el `.env` no se leía nunca y todo daba 401 con el endpoint y el deployment correctos. Costó media tarde. Ante un 401 que no cierra: `[Environment]::GetEnvironmentVariable('X','User')` antes que cualquier otra cosa |
+| Azure tiene dos claves y una puede estar muerta | `key1` daba 401 y `key2` conectaba. El portal las muestra iguales y no dice cuál está viva. Probar las dos antes de dar la credencial por mala |
+| Publicar muestras de voz sin normalizar | Salieron con 15 dB de diferencia entre sí (`alloy` −18,6 contra `sage` −33,5). En un selector que existe para comparar, la más baja se juzga peor voz. `loudnorm=I=-16` y quedan todas parejas |
 
 ---
 
@@ -379,11 +384,13 @@ Cada una tiene un test que la cubre. **No las repitas.**
   interactiva, no queda en el historial), **o** reautenticar el MCP de
   Supabase eligiendo la organización dueña del proyecto, y que lo aplique el
   agente
-- **Revisar la clave de Azure del `.env` local** — da 401 en las tres
-  superficies de la API (administración, datos y WebSocket) contra el
-  endpoint y el deployment correctos, y mide 84 caracteres, que no es el
-  largo habitual de una key de Azure OpenAI. Producción anda, así que es la
-  copia local la que está mal. Bloquea grabar las 10 de OpenAI (3.5)
+- **Borrar la variable de usuario `AZURE_OPENAI_API_KEY` de Windows** —
+  tiene la `key1` de Azure, que está muerta, y **le gana al `.env`** porque
+  `python-dotenv` no pisa variables que ya existen. Mientras esté, cualquier
+  cosa que corras en local va a dar 401 aunque el `.env` tenga la clave
+  buena. La viva es `key2`. Se borra con
+  `[Environment]::SetEnvironmentVariable('AZURE_OPENAI_API_KEY', $null, 'User')`
+  y se reinicia la terminal
 - **Rotar la contraseña de Supabase** — quedó expuesta en el chat
 - **Elegir un `voice_id` real de Fish para `demo_capilar`**, para poder
   validar a oído que cada tenant habla con su propia voz (gate de la Fase 8)
