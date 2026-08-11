@@ -26,22 +26,31 @@ from motor_voz.brain.contexto import construir_contexto
 from motor_voz.brain.tenants import repositorio
 from motor_voz.brain.tenants.resolver import tenant_de_la_sala
 from motor_voz.config import cargar
-from motor_voz.voice import motores
+from motor_voz.voice import herramientas, motores
 from motor_voz.voice.transformaciones import normalizar_para_voz
 
 logger = logging.getLogger("motor-voz")
+
+MODO_DE_LA_SESION = "publico"
+"""Con que juego de tools atiende el agente.
+
+Fijo en publico a proposito, y no leido de la sala ni del token: hoy no hay
+forma de saber QUIEN esta del otro lado, y el modo interno da acceso a los
+leads de un negocio. Cuando exista login, esto sale de la metadata firmada
+del token — nunca de algo que mande el navegador.
+"""
 
 
 class Receptor(Agent):
     """Agente receptor de un tenant.
 
-    Recibe el prompt ya armado en vez de armarlo: quien lo arma es
-    brain/contexto.py, que sabe del tenant. Este archivo sigue sin tener
-    logica de negocio.
+    Recibe el prompt y las tools ya armados en vez de armarlos: quien decide
+    que dice es brain/contexto.py y que puede hacer es brain/tools/registro.py.
+    Este archivo sigue sin tener logica de negocio.
     """
 
-    def __init__(self, instructions: str) -> None:
-        super().__init__(instructions=instructions)
+    def __init__(self, instructions: str, tools: list | None = None) -> None:
+        super().__init__(instructions=instructions, tools=tools or [])
 
     async def on_enter(self) -> None:
         self.session.generate_reply(
@@ -202,8 +211,13 @@ async def entrypoint(ctx: JobContext) -> None:
     ctx.add_shutdown_callback(registrar_uso)
 
     prompt = construir_contexto(tenant, motor=config.motor, canal="web")
+    # El modo decide que puede HACER el agente, no solo que dice. Hoy siempre
+    # es publico: conceder el interno sin saber quien pide seria regalarle los
+    # leads de un negocio a cualquiera. Lo abre la fase de autenticacion, y va
+    # antes del panel de control.
+    tools = herramientas.para(MODO_DE_LA_SESION, tenant, config, ctx.room.name)
     await session.start(
-        agent=Receptor(prompt),
+        agent=Receptor(prompt, tools),
         room=ctx.room,
         room_options=room_io.RoomOptions(),
     )
