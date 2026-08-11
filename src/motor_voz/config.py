@@ -143,5 +143,12 @@ def cargar(entorno: dict[str, str] | None = None) -> Config:
         azure_deployment=e.get("AZURE_OPENAI_DEPLOYMENT", ""),
         azure_api_key=e.get("AZURE_OPENAI_API_KEY", ""),
         supabase_url=e.get("SUPABASE_URL", "").strip(),
-        supabase_service_role_key=e.get("SUPABASE_SERVICE_ROLE_KEY", "").strip(),
+        # Supabase le cambio el nombre a esta clave: antes era la service_role
+        # (un JWT), ahora es la secret key (sb_secret_...). Se aceptan los dos
+        # nombres porque conviven: el .env de la VM tiene solo el nuevo y el
+        # local tiene los dos con el mismo valor. Sin esto, produccion arranca
+        # sin quejarse y devuelve 503 en cada pedido de token.
+        supabase_service_role_key=(
+            e.get("SUPABASE_SERVICE_ROLE_KEY") or e.get("SUPABASE_SECRET_KEY") or ""
+        ).strip(),
     )

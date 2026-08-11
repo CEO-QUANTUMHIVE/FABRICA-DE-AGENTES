@@ -29,7 +29,7 @@ from motor_voz.api.limites import LimiteAlcanzado, Limitador
 from motor_voz.brain.tenants import repositorio
 from motor_voz.brain.tenants.modelos import Tenant
 from motor_voz.brain.tenants.resolver import TENANT_POR_DEFECTO
-from motor_voz.config import Config, cargar
+from motor_voz.config import Config, ConfigInvalida, cargar
 from motor_voz.voice.motores import catalogo_de_voces, ruta_de_muestra
 
 logger = logging.getLogger("motor-voz.api")
@@ -230,6 +230,19 @@ def crear_app(
     tenant_de_dominio: TenantDeDominio | None = None,
 ) -> web.Application:
     cfg = config or cargar()
+
+    # Desde las Fases 5-8 no hay token sin resolver el tenant, y eso es una
+    # consulta a Supabase. Sin credenciales el servicio arrancaba igual y
+    # devolvia 503 en cada pedido: la demo entera caida y en silencio. Mejor
+    # no arrancar. Solo aplica cuando se usa el repositorio real; los tests
+    # inyectan los suyos y no necesitan base.
+    if obtener_tenant is None and not (cfg.supabase_url and cfg.supabase_service_role_key):
+        raise ConfigInvalida(
+            "La API necesita SUPABASE_URL y SUPABASE_SERVICE_ROLE_KEY (o "
+            "SUPABASE_SECRET_KEY) para resolver el tenant de cada sesion. "
+            "Sin eso, POST /api/token devuelve 503 siempre."
+        )
+
     app = web.Application()
     app["config"] = cfg
     app["obtener_tenant"] = obtener_tenant or repositorio.obtener_tenant

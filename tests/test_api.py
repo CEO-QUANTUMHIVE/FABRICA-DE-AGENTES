@@ -13,7 +13,7 @@ from motor_voz.api.limites import LimiteAlcanzado, Limitador
 from motor_voz.api.servidor import crear_app
 from motor_voz.brain.tenants.modelos import PerfilTenant, Tenant
 from motor_voz.brain.tenants.repositorio import TenantNoEncontrado
-from motor_voz.config import cargar
+from motor_voz.config import ConfigInvalida, cargar
 from motor_voz.voice import motores
 
 ENTORNO = {
@@ -291,6 +291,35 @@ class TestTenant:
         claims = jsonlib.loads(base64.urlsafe_b64decode(payload))
         metadata = jsonlib.loads(claims["metadata"])
         assert metadata["tenant"] == "quantumhive"
+
+
+class TestCredencialesDeSupabase:
+    """Sin credenciales no hay token, asi que no se arranca sin ellas."""
+
+    def test_acepta_el_nombre_nuevo_de_la_clave(self):
+        """Supabase renombro service_role a secret key. La VM tiene solo el
+        nuevo; el .env local, los dos. Aceptar uno solo rompia produccion."""
+        c = cargar(ENTORNO | {"SUPABASE_SECRET_KEY": "sb_secret_loquesea"})
+        assert c.supabase_service_role_key == "sb_secret_loquesea"
+
+    def test_el_nombre_viejo_le_gana_al_nuevo(self):
+        c = cargar(
+            ENTORNO
+            | {"SUPABASE_SERVICE_ROLE_KEY": "la-vieja", "SUPABASE_SECRET_KEY": "la-nueva"}
+        )
+        assert c.supabase_service_role_key == "la-vieja"
+
+    def test_no_arranca_sin_credenciales_en_vez_de_dar_503_siempre(self):
+        """El modo silencioso era el peligroso: arrancaba y no atendia a nadie."""
+        with pytest.raises(ConfigInvalida) as e:
+            crear_app(cargar(ENTORNO))
+        assert "SUPABASE" in str(e.value)
+
+    def test_con_credenciales_arranca(self):
+        app = crear_app(
+            cargar(ENTORNO | {"SUPABASE_URL": "https://x.supabase.co", "SUPABASE_SECRET_KEY": "k"})
+        )
+        assert app["config"].supabase_service_role_key == "k"
 
 
 class TestElDominioMandaSobreElTenant:
