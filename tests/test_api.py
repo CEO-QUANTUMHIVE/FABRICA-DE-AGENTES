@@ -11,7 +11,7 @@ import pytest
 from motor_voz.api import niveles
 from motor_voz.api.limites import LimiteAlcanzado, Limitador
 from motor_voz.api.servidor import crear_app
-from motor_voz.brain.tenants.modelos import PerfilTenant, Tenant
+from motor_voz.brain.tenants.modelos import DominioTenant, PerfilTenant, Tenant
 from motor_voz.brain.tenants.repositorio import TenantNoEncontrado
 from motor_voz.config import ConfigInvalida, cargar
 from motor_voz.voice import motores
@@ -40,7 +40,13 @@ TENANTS = {"quantumhive": _tenant("quantumhive", "QuantumHive"),
            "demo_capilar": _tenant("demo_capilar", "Barberia Demo")}
 
 # Que dominio es de quien. En la realidad esto vive en tenant_dominios.
-DOMINIOS = {"www.quantumhive.com.ar": "quantumhive", "pelo-duro.com.ar": "demo_capilar"}
+# El tercero es un host propio de demos: hospeda varios rubros, asi que la
+# pagina puede decir cual quiere.
+DOMINIOS = {
+    "www.quantumhive.com.ar": DominioTenant("quantumhive", puede_declarar=False),
+    "pelo-duro.com.ar": DominioTenant("demo_capilar", puede_declarar=False),
+    "demos.quantumhive.com.ar": DominioTenant("demo_capilar", puede_declarar=True),
+}
 
 
 async def _tenant_falso(config, slug):
@@ -345,6 +351,34 @@ class TestElDominioMandaSobreElTenant:
             headers={"Origin": "https://www.quantumhive.com.ar"},
         )
         assert (await r.json())["tenant"] == "quantumhive"
+
+    async def test_un_host_de_demos_si_puede_declarar_el_rubro(self, cliente):
+        """Nuestros sitios de demos hospedan varios rubros en un solo host y
+        el Origin no distingue la pagina: ahi la pagina elige."""
+        c = await cliente()
+        r = await c.post(
+            "/api/token",
+            json={"nivel": 1, "tenant": "quantumhive"},
+            headers={"Origin": "https://demos.quantumhive.com.ar"},
+        )
+        assert (await r.json())["tenant"] == "quantumhive"
+
+    async def test_un_host_de_demos_sin_declarar_usa_el_suyo(self, cliente):
+        c = await cliente()
+        r = await c.post(
+            "/api/token", json={"nivel": 1}, headers={"Origin": "https://demos.quantumhive.com.ar"}
+        )
+        assert (await r.json())["tenant"] == "demo_capilar"
+
+    async def test_el_permiso_de_declarar_no_lo_hereda_un_dominio_de_cliente(self, cliente):
+        """Lo que separa un host de demos de la landing de un cliente."""
+        c = await cliente()
+        r = await c.post(
+            "/api/token",
+            json={"nivel": 1, "tenant": "quantumhive"},
+            headers={"Origin": "https://pelo-duro.com.ar"},
+        )
+        assert (await r.json())["tenant"] == "demo_capilar"
 
     async def test_el_puerto_no_rompe_el_dominio(self, cliente):
         """Solo se compara el host: el Origin trae protocolo y a veces puerto."""

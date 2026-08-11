@@ -121,16 +121,23 @@ async def emitir_token(peticion: web.Request) -> web.Response:
 
     # Se resuelve ANTES de gastar el cupo del limitador: pedir un negocio que
     # no existe no le tiene que consumir intentos a la IP.
+    pedido = (cuerpo.get("tenant") or "").strip()
     try:
-        tenant_slug = await tenant_de_dominio(config, dominio)
-        if tenant_slug is None:
-            # Dominio no registrado. En produccion cae a nuestro propio agente
-            # y el cuerpo se ignora por completo. Fuera de produccion si se
-            # honra, que es como se prueba el aislamiento a oido en local.
-            if config.entorno in ENTORNOS_DE_DESARROLLO:
-                tenant_slug = (cuerpo.get("tenant") or "").strip() or TENANT_POR_DEFECTO
-            else:
-                tenant_slug = TENANT_POR_DEFECTO
+        registrado = await tenant_de_dominio(config, dominio)
+        if registrado is not None:
+            # Nuestros sitios de demos hospedan varios rubros en un mismo host
+            # —ocho plantillas de barberia, ocho de gastronomia— y el Origin no
+            # distingue la pagina. Solo esos pueden decir que agente quieren.
+            # El dominio de un cliente real mapea a uno solo y no declara nada.
+            tenant_slug = pedido if (registrado.puede_declarar and pedido) else registrado.tenant_slug
+        elif config.entorno in ENTORNOS_DE_DESARROLLO:
+            # Dominio sin registrar, fuera de produccion: se honra el cuerpo,
+            # que es como se prueba el aislamiento a oido en local.
+            tenant_slug = pedido or TENANT_POR_DEFECTO
+        else:
+            # Sin registrar y en produccion: nuestro propio agente, nunca el
+            # de otro. Pedirlo por nombre no alcanza para llevarselo.
+            tenant_slug = TENANT_POR_DEFECTO
         tenant = await obtener_tenant(config, tenant_slug)
     except repositorio.TenantNoEncontrado as e:
         return _cors(web.json_response({"error": str(e)}, status=404))

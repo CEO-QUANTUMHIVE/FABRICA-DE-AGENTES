@@ -30,6 +30,20 @@ class VozTenant:
 
 
 @dataclass(frozen=True)
+class DominioTenant:
+    """Un dominio registrado y de quien es.
+
+    `puede_declarar` es para nuestros propios sitios de demos, donde conviven
+    varios rubros en el mismo host: ahi la pagina dice que agente quiere. El
+    dominio de un cliente real nunca lo tiene, porque si no volveria a poder
+    pedir el agente de otro negocio.
+    """
+
+    tenant_slug: str
+    puede_declarar: bool
+
+
+@dataclass(frozen=True)
 class Tenant:
     id: str
     slug: str
