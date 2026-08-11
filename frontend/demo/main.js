@@ -2,6 +2,17 @@ import { Room, RoomEvent, Track } from 'livekit-client';
 
 const API = import.meta.env.VITE_API ?? 'http://localhost:8080';
 
+// El tenant se puede fijar por la URL para probar el aislamiento a oido:
+//   http://localhost:5173/            -> quantumhive (el default del backend)
+//   http://localhost:5173/?tenant=demo_capilar
+//
+// Solo en esta pagina de demo. El widget que embeben los clientes NO manda
+// tenant: el suyo sale del dominio donde esta instalado.
+//
+// La voz del tenant solo se escucha en el NIVEL 1. Gemini y OpenAI hablan
+// con una voz de su propio catalogo, no con la voz clonada del negocio.
+const TENANT = new URLSearchParams(location.search).get('tenant') ?? '';
+
 const $ = (id) => document.getElementById(id);
 let sala = null;
 let nivelElegido = 1;
@@ -119,7 +130,7 @@ async function conectar() {
     const r = await fetch(`${API}/api/token`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ nivel: nivelElegido }),
+      body: JSON.stringify({ nivel: nivelElegido, ...(TENANT && { tenant: TENANT }) }),
     });
     datos = await r.json();
     if (!r.ok) throw new Error(datos.error ?? 'No se pudo iniciar la sesión');

@@ -335,6 +335,19 @@ Lo que quedó blindado: `test_un_solo_cliente_supabase.py` recorre
 real — la defensa es que toda query pase por ese archivo. Eso además hace
 barato mover `brain/` a su repo propio (ver §4).
 
+Para escucharlo: [`docs/procesos/probar-un-tenant-a-oido.md`](procesos/probar-un-tenant-a-oido.md).
+**Tiene que ser en el nivel 1** — Gemini y OpenAI hablan con voces de su
+catálogo, no con la clonada del negocio, así que en los niveles 2 y 3 los dos
+tenants suenan igual y parece que el aislamiento está roto.
+
+> **Agujero conocido, para antes del primer cliente real:** `POST /api/token`
+> acepta el `tenant` en el cuerpo del pedido, de quien sea. Hoy no importa
+> porque los dos tenants son nuestros, pero con clientes de verdad cualquiera
+> podría invocar el agente de otro negocio pidiéndolo por nombre. El tenant
+> tendría que salir del dominio donde está embebido el widget, no del cuerpo
+> del pedido. No lo arregles ahora: anotalo para la fase que abra el alta de
+> clientes.
+
 Lo que sigue son las Fases 9 y 10, cada una con su plan propio.
 
 ---

@@ -7,6 +7,7 @@ documento existe porque algo costó horas la primera vez.
 | Proceso | Cuándo |
 |---|---|
 | [Grabar muestras de voz](grabar-muestras-de-voz.md) | Se agrega o cambia una voz del catálogo |
+| [Probar un tenant a oído](probar-un-tenant-a-oido.md) | Hay que validar que cada negocio suene como el suyo |
 | [Aplicar una migración de Supabase](aplicar-una-migracion-de-supabase.md) | Cambia el esquema o los datos semilla |
 | [Diagnosticar un 401](credenciales-y-401.md) | Una credencial falla y no se entiende por qué |
 | [Desplegar](desplegar.md) | Hay que subir cambios a producción |
