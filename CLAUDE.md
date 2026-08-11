@@ -91,7 +91,17 @@ que estaba vivo pisó la landing de producción.
 
 ---
 
-## 5. Lo demás
+## 5. Cómo se hace cada cosa
+
+Antes de grabar muestras de voz, aplicar una migración, pelearte con un 401 o
+desplegar: **está escrito en [`docs/procesos/`](docs/procesos/README.md).**
+Cada documento existe porque eso mismo costó horas la primera vez. Leerlo
+cuesta un minuto; volver a tropezar costó una tarde.
+
+Y al revés: **cuando resuelvas algo que costó, escribilo ahí.** Es parte del
+trabajo, igual que actualizar el brief.
+
+## 6. Lo demás
 
 El resto de las reglas del proyecto —la frontera dura entre `brain/` y
 `voice/`, los tres motores, las trampas que ya costaron horas— están en

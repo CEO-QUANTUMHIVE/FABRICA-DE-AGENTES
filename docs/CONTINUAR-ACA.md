@@ -244,6 +244,20 @@ diferencia entre sí y la más baja parecía peor voz cuando solo sonaba menos.
 
 Falta desplegar el widget para que se vean.
 
+**Pendiente: reescribir los saludos.** Hoy dicen *"Hola, soy Mateo, de
+QuantumHive. ¿En qué te puedo ayudar?"*, y ese cierre no es la actitud de
+QuantumHive — es el de cualquier soporte. Tienen que apuntar a lo que
+QuantumHive hace de verdad, y variar entre voces en vez de ser todos iguales:
+
+> *"Hola, soy Mateo, de QuantumHive. ¿Estás listo para darle vida a tu negocio?"*
+> *"¿Te gusta esta voz para que atienda tu negocio?"*
+> *"Soy Delfi, de QuantumHive. Me encantaría atender a tus clientes."*
+
+Se cambia la constante `TEXTO` en `scripts/generar_muestras.py` y se regenera
+con `--forzar`. Ojo que eso son 18 síntesis nuevas, 10 de ellas sesiones
+Realtime contra la suscripción con tope: hacerlo una vez, con los textos ya
+decididos.
+
 - [`scripts/generar_muestras.py`](../scripts/generar_muestras.py) — one-shot
   e idempotente. Lee el catálogo de `motores.py`, así que no hay una segunda
   lista que se pueda desincronizar. **No regenera lo que ya existe** salvo
