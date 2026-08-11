@@ -51,6 +51,37 @@ desarrollo tiene las credenciales de `livekit-server --dev`
 (`devkey`/`secret`, 6 bytes). Con esas el agente arranca bien y LiveKit lo
 rechaza con 401 recién al registrarse.
 
+## API y agente, paso a paso
+
+```bash
+gcloud compute ssh motor-voz-agente --zone us-east1-b --tunnel-through-iap
+```
+
+En la VM, en `/home/sergio/motor-voz`:
+
+```bash
+git pull origin arquitectura/spec-motor-voz && .venv/bin/pip install -q -e . && sudo systemctl restart motor-voz-api motor-voz-agente
+```
+
+**`git pull` no instala dependencias, y en la VM no hay `uv`.** Cuando entró
+`supabase` como dependencia nueva, el código estaba pero el paquete no: el
+agente habría arrancado y muerto al importar. Por eso va el `pip install -e .`
+en el medio, siempre.
+
+**La API tarda unos 8 segundos en levantar.** Si verificás a los 5 vas a creer
+que se rompió. Esperá 10 antes de dar nada por muerto.
+
+Verificación mínima después de reiniciar:
+
+```bash
+curl -s http://localhost:8080/api/salud
+```
+
+Y que el worker diga `registered worker` en `journalctl -u motor-voz-agente`.
+
+**Para volver atrás:** `git checkout <commit-anterior>`, el mismo
+`pip install -e .`, y reiniciar los dos servicios.
+
 ## Widget
 
 ```bash
@@ -58,10 +89,29 @@ npm run build
 ```
 
 En `frontend/widget/`. Después copiar `dist/*` más `loader.js` (renombrado a
-`widget.js`) a `/var/www/widget/` en la VM `livekit-quantumhive`, por `scp`.
+`widget.js`) a `/var/www/widget/` en la VM `livekit-quantumhive`.
 
-**Borrá los assets viejos:** los nombres llevan hash y se acumulan. Las
-muestras no llevan hash, así que esas se pisan solas.
+`/var/www/widget/` es del usuario `sergio`, así que **no hace falta sudo**.
+
+**`gcloud compute scp --recurse` quiere el directorio padre como destino**, no
+la carpeta a crear: `vm:/tmp/`, no `vm:/tmp/widget-nuevo`. Con lo segundo
+falla con un `unable to open` que no explica nada.
+
+**El orden importa:** copiá lo nuevo primero y borrá los hasheados viejos
+después. Los nombres llevan hash, así que conviven sin pisarse. Al revés hay
+un segundo sin assets, y eso lo ve un visitante.
+
+```bash
+cd /var/www/widget/assets && for f in *.js *.css *.png; do [ -e "/tmp/widget-nuevo/assets/$f" ] || rm -f "$f"; done
+```
+
+Las muestras no llevan hash, así que esas se pisan solas.
+
+Y antes de todo, un backup que hace la vuelta atrás trivial:
+
+```bash
+cp -r /var/www/widget /tmp/widget-backup-$(date +%H%M)
+```
 
 ## Después de desplegar
 

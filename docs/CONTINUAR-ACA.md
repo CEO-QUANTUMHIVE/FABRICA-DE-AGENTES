@@ -242,7 +242,8 @@ segundos. Y el spec ya dice que **el TTS es el 86% del costo variable**
 3,5 y 4,9 segundos, ~25 KB cada una. Sin normalizar salían con hasta 15 dB de
 diferencia entre sí y la más baja parecía peor voz cuando solo sonaba menos.
 
-Falta desplegar el widget para que se vean.
+**Desplegado el 2026-08-10.** Las 18 responden 200 en
+`voz.quantumhive.com.ar/assets/muestras/`.
 
 **Pendiente: reescribir los saludos.** Hoy dicen *"Hola, soy Mateo, de
 QuantumHive. ¿En qué te puedo ayudar?"*, y ese cierre no es la actitud de
@@ -306,8 +307,13 @@ después de 3.6.
 
 Plan completo y reconciliado con el código de hoy:
 [`docs/superpowers/plans/2026-08-09-motor-voz-fases-5-8.md`](superpowers/plans/2026-08-09-motor-voz-fases-5-8.md).
-**Las 10 tareas están implementadas.** Resultado completo en
-[`docs/resultados/fases5-8-multitenant.md`](resultados/fases5-8-multitenant.md).
+**Las 10 tareas están implementadas y DESPLEGADAS** (2026-08-10). Resultado
+completo en [`docs/resultados/fases5-8-multitenant.md`](resultados/fases5-8-multitenant.md).
+
+Verificado en producción después del deploy: la sala sale con el formato nuevo
+(`demo-quantumhive-pipeline--…`), el worker se registró en LiveKit, y **pedir
+otro tenant por el cuerpo con un `curl` devuelve `quantumhive`** — el candado
+del dominio funciona en vivo.
 
 Supabase `bcexirhurfigrehfarol`, migración aplicada, dos tenants cargados
 (`quantumhive` y `demo_capilar`) con sus servicios y sus voces.
@@ -421,6 +427,8 @@ Cada una tiene un test que la cubre. **No las repitas.**
 | Azure tiene dos claves y una puede estar muerta | `key1` daba 401 y `key2` conectaba. El portal las muestra iguales y no dice cuál está viva. Probar las dos antes de dar la credencial por mala |
 | Publicar muestras de voz sin normalizar | Salieron con 15 dB de diferencia entre sí (`alloy` −18,6 contra `sage` −33,5). En un selector que existe para comparar, la más baja se juzga peor voz. `loudnorm=I=-16` y quedan todas parejas |
 | Comparar el entorno contra una sola palabra | `if entorno == "produccion"` con un `.env` que dice `development` y una VM que dice `production` deja el candado abierto sin que se note. Se lista lo que **afloja** (`ENTORNOS_DE_DESARROLLO`), no lo que aprieta: así un valor en otro idioma, mal escrito o vacío falla cerrado |
+| Desplegar sin instalar las dependencias nuevas | `git pull` trae el código pero no el paquete. En la VM no hay `uv`: va `.venv/bin/pip install -e .` en el medio. Cuando entró `supabase`, sin eso el agente arrancaba y moría al importar |
+| Una variable que Supabase renombró | La VM tenía `SUPABASE_SECRET_KEY` y el código pedía `SUPABASE_SERVICE_ROLE_KEY`. No estaba entre las obligatorias, así que el servicio levantaba sin quejarse y devolvía 503 en cada token. Ahora `crear_app` no arranca sin credenciales: mejor caído y ruidoso que arriba y mudo |
 
 ---
 
