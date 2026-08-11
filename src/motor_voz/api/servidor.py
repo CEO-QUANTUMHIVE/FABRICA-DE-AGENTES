@@ -19,6 +19,7 @@ import json
 import logging
 import secrets
 from collections.abc import Awaitable, Callable
+from urllib.parse import urlparse
 
 from aiohttp import web
 from livekit import api
@@ -37,6 +38,14 @@ ORIGENES_PERMITIDOS = "*"  # la demo es publica; en produccion, el dominio propi
 # Se inyecta para poder testear sin red: los tests pasan un tenant falso y la
 # suite sigue sin depender de que Supabase este arriba.
 ObtenerTenant = Callable[[Config, str], Awaitable[Tenant]]
+TenantDeDominio = Callable[[Config, str], Awaitable[str | None]]
+
+# Los unicos entornos donde se puede pedir un tenant por el cuerpo. Se listan
+# los que aflojan, no los que aprietan: asi un valor escrito distinto, en otro
+# idioma o vacio se comporta como produccion. Falla cerrado a proposito — el
+# .env local dice "development" y el de la VM podria decir "production", y
+# comparar contra una sola palabra dejaba el agujero abierto.
+ENTORNOS_DE_DESARROLLO = frozenset({"development", "desarrollo", "dev", "local", "test"})
 
 
 def _cors(respuesta: web.StreamResponse) -> web.StreamResponse:
@@ -90,6 +99,7 @@ async def emitir_token(peticion: web.Request) -> web.Response:
     config: Config = peticion.app["config"]
     limitador: Limitador = peticion.app["limitador"]
     obtener_tenant: ObtenerTenant = peticion.app["obtener_tenant"]
+    tenant_de_dominio: TenantDeDominio = peticion.app["tenant_de_dominio"]
 
     try:
         cuerpo = await peticion.json()
@@ -101,10 +111,26 @@ async def emitir_token(peticion: web.Request) -> web.Response:
     except catalogo_niveles.NivelInvalido as e:
         return _cors(web.json_response({"error": str(e)}, status=400))
 
-    # El tenant se resuelve ANTES de gastar el cupo del limitador: pedir un
-    # negocio que no existe no le tiene que consumir intentos a la IP.
-    tenant_slug = (cuerpo.get("tenant") or TENANT_POR_DEFECTO).strip() or TENANT_POR_DEFECTO
+    # El tenant sale del DOMINIO donde esta embebido el widget, no de lo que
+    # mande el navegador. La cabecera Origin la pone el navegador y el codigo
+    # de la pagina no la puede cambiar, asi que una landing solo puede
+    # invocar al agente de su dueño. Antes salia del cuerpo, y con eso
+    # cualquiera se llevaba el agente real de otro negocio con un curl.
+    origen = peticion.headers.get("Origin", "")
+    dominio = (urlparse(origen).hostname or "") if origen else ""
+
+    # Se resuelve ANTES de gastar el cupo del limitador: pedir un negocio que
+    # no existe no le tiene que consumir intentos a la IP.
     try:
+        tenant_slug = await tenant_de_dominio(config, dominio)
+        if tenant_slug is None:
+            # Dominio no registrado. En produccion cae a nuestro propio agente
+            # y el cuerpo se ignora por completo. Fuera de produccion si se
+            # honra, que es como se prueba el aislamiento a oido en local.
+            if config.entorno in ENTORNOS_DE_DESARROLLO:
+                tenant_slug = (cuerpo.get("tenant") or "").strip() or TENANT_POR_DEFECTO
+            else:
+                tenant_slug = TENANT_POR_DEFECTO
         tenant = await obtener_tenant(config, tenant_slug)
     except repositorio.TenantNoEncontrado as e:
         return _cors(web.json_response({"error": str(e)}, status=404))
@@ -199,12 +225,15 @@ async def preflight(peticion: web.Request) -> web.Response:
 
 
 def crear_app(
-    config: Config | None = None, obtener_tenant: ObtenerTenant | None = None
+    config: Config | None = None,
+    obtener_tenant: ObtenerTenant | None = None,
+    tenant_de_dominio: TenantDeDominio | None = None,
 ) -> web.Application:
     cfg = config or cargar()
     app = web.Application()
     app["config"] = cfg
     app["obtener_tenant"] = obtener_tenant or repositorio.obtener_tenant
+    app["tenant_de_dominio"] = tenant_de_dominio or repositorio.tenant_de_dominio
     app["limitador"] = Limitador(
         por_ip_hora=cfg.max_sesiones_por_ip_hora,
         por_dia=cfg.max_sesiones_por_dia,

@@ -82,6 +82,10 @@ class Config:
     azure_api_key: str
     supabase_url: str
     supabase_service_role_key: str
+    # En produccion el tenant sale SOLO del dominio donde esta embebido el
+    # widget. Fuera de produccion se puede pedir por el cuerpo, que es como se
+    # prueba el aislamiento a oido en local.
+    entorno: str
 
 
 def cargar(entorno: dict[str, str] | None = None) -> Config:
@@ -122,6 +126,9 @@ def cargar(entorno: dict[str, str] | None = None) -> Config:
         vad_silencio_ms=int(e.get("VAD_SILENCIO_MS", "900")),
         vad_relleno_ms=int(e.get("VAD_RELLENO_MS", "300")),
         vad_umbral=float(e.get("VAD_UMBRAL", "0.6")),
+        # El default es el estricto: si nadie dice lo contrario, se comporta
+        # como produccion. Aflojar el aislamiento tiene que ser deliberado.
+        entorno=e.get("ENVIRONMENT", "produccion").strip().lower(),
         motor=e.get("MOTOR", "pipeline").strip().lower(),
         gemini_model=e.get("GEMINI_MODEL", "gemini-live-2.5-flash-native-audio"),
         gemini_voice=e.get("GEMINI_VOICE", "Puck"),

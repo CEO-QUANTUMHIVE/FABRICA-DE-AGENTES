@@ -22,28 +22,49 @@ ENTORNO = {
     "LIVEKIT_URL": "ws://localhost:7880",
     "LIVEKIT_API_KEY": "devkey",
     "LIVEKIT_API_SECRET": "secreto-largo-de-prueba-1234567890",
+    # Casi todos los tests prueban el camino de desarrollo, donde el tenant se
+    # puede pedir por el cuerpo. El de produccion tiene su propia clase.
+    "ENVIRONMENT": "desarrollo",
 }
 
-TENANT_DE_PRUEBA = Tenant(
-    id="tenant-1", slug="quantumhive", nombre="QuantumHive", idioma="es",
-    perfil=PerfilTenant(slug="receptor", nombre="Receptor", prompt_base="Identidad de prueba."),
-    prompt_propio="", servicios=(), voz=None,
-)
+
+def _tenant(slug, nombre):
+    return Tenant(
+        id=f"id-{slug}", slug=slug, nombre=nombre, idioma="es",
+        perfil=PerfilTenant(slug="receptor", nombre="Receptor", prompt_base=f"Soy {nombre}."),
+        prompt_propio="", servicios=(), voz=None,
+    )
+
+
+TENANTS = {"quantumhive": _tenant("quantumhive", "QuantumHive"),
+           "demo_capilar": _tenant("demo_capilar", "Barberia Demo")}
+
+# Que dominio es de quien. En la realidad esto vive en tenant_dominios.
+DOMINIOS = {"www.quantumhive.com.ar": "quantumhive", "pelo-duro.com.ar": "demo_capilar"}
 
 
 async def _tenant_falso(config, slug):
     """El tenant se inyecta para que la suite no dependa de Supabase."""
-    if slug != TENANT_DE_PRUEBA.slug:
+    if slug not in TENANTS:
         raise TenantNoEncontrado(f"no existe el tenant '{slug}'")
-    return TENANT_DE_PRUEBA
+    return TENANTS[slug]
+
+
+async def _dominio_falso(config, dominio):
+    return DOMINIOS.get(dominio)
 
 
 @pytest.fixture
 def cliente(aiohttp_client):
     async def _crear(**extra):
         obtener_tenant = extra.pop("obtener_tenant", _tenant_falso)
+        tenant_de_dominio = extra.pop("tenant_de_dominio", _dominio_falso)
         return await aiohttp_client(
-            crear_app(cargar(ENTORNO | extra), obtener_tenant=obtener_tenant)
+            crear_app(
+                cargar(ENTORNO | extra),
+                obtener_tenant=obtener_tenant,
+                tenant_de_dominio=tenant_de_dominio,
+            )
         )
     return _crear
 
@@ -270,3 +291,75 @@ class TestTenant:
         claims = jsonlib.loads(base64.urlsafe_b64decode(payload))
         metadata = jsonlib.loads(claims["metadata"])
         assert metadata["tenant"] == "quantumhive"
+
+
+class TestElDominioMandaSobreElTenant:
+    """Nadie se lleva el agente de otro negocio pidiendolo por nombre.
+
+    El Origin lo pone el navegador y el codigo de una pagina no lo puede
+    cambiar, asi que una landing solo puede invocar al agente de su dueño.
+    """
+
+    async def test_el_dominio_registrado_define_el_tenant(self, cliente):
+        c = await cliente()
+        r = await c.post(
+            "/api/token", json={"nivel": 1}, headers={"Origin": "https://pelo-duro.com.ar"}
+        )
+        assert (await r.json())["tenant"] == "demo_capilar"
+
+    async def test_el_dominio_le_gana_al_cuerpo(self, cliente):
+        """Aunque pidas otro negocio por el cuerpo, manda de donde venis."""
+        c = await cliente()
+        r = await c.post(
+            "/api/token",
+            json={"nivel": 1, "tenant": "demo_capilar"},
+            headers={"Origin": "https://www.quantumhive.com.ar"},
+        )
+        assert (await r.json())["tenant"] == "quantumhive"
+
+    async def test_el_puerto_no_rompe_el_dominio(self, cliente):
+        """Solo se compara el host: el Origin trae protocolo y a veces puerto."""
+        c = await cliente()
+        r = await c.post(
+            "/api/token", json={"nivel": 1}, headers={"Origin": "https://pelo-duro.com.ar:443"}
+        )
+        assert (await r.json())["tenant"] == "demo_capilar"
+
+    async def test_un_dominio_desconocido_cae_a_nuestro_agente(self, cliente):
+        """Una landing sin registrar no se lleva el agente de nadie."""
+        c = await cliente()
+        r = await c.post(
+            "/api/token", json={"nivel": 1}, headers={"Origin": "https://sitio-cualquiera.com"}
+        )
+        assert (await r.json())["tenant"] == "quantumhive"
+
+    async def test_en_produccion_el_cuerpo_no_puede_elegir_tenant(self, cliente):
+        """El agujero que esto cierra: un curl con el slug de otro negocio."""
+        c = await cliente(ENVIRONMENT="produccion")
+        r = await c.post("/api/token", json={"nivel": 1, "tenant": "demo_capilar"})
+        assert (await r.json())["tenant"] == "quantumhive"
+
+    async def test_fuera_de_produccion_el_cuerpo_sirve_para_probar(self, cliente):
+        """Sin esto no se puede validar el aislamiento a oido en local."""
+        c = await cliente()
+        r = await c.post("/api/token", json={"nivel": 1, "tenant": "demo_capilar"})
+        assert (await r.json())["tenant"] == "demo_capilar"
+
+    async def test_el_default_es_produccion(self):
+        """Aflojar el aislamiento tiene que ser deliberado, no un olvido."""
+        sin_declarar = {k: v for k, v in ENTORNO.items() if k != "ENVIRONMENT"}
+        assert cargar(sin_declarar).entorno == "produccion"
+
+    @pytest.mark.parametrize("valor", ["production", "prod", "staging", "", "PRODUCCION "])
+    async def test_cualquier_entorno_raro_se_comporta_como_produccion(self, cliente, valor):
+        """Falla cerrado: el .env local dice development y el de la VM podria
+        decir production. Comparar contra una sola palabra dejaba el agujero."""
+        c = await cliente(ENVIRONMENT=valor)
+        r = await c.post("/api/token", json={"nivel": 1, "tenant": "demo_capilar"})
+        assert (await r.json())["tenant"] == "quantumhive"
+
+    @pytest.mark.parametrize("valor", ["development", "desarrollo", "dev", "local", "test"])
+    async def test_los_entornos_de_desarrollo_si_permiten_elegir(self, cliente, valor):
+        c = await cliente(ENVIRONMENT=valor)
+        r = await c.post("/api/token", json={"nivel": 1, "tenant": "demo_capilar"})
+        assert (await r.json())["tenant"] == "demo_capilar"

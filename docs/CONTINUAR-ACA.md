@@ -43,7 +43,7 @@ Se elige con `MOTOR=` en el `.env`, o por sesión desde la demo web.
 | Widget embebible | ✅ en `www.quantumhive.com.ar` (ver 3.4) |
 | Selector de voces | ✅ 8 de Gemini + 10 de OpenAI, agrupadas por género |
 | Grafo de conocimiento | ✅ ~600 nodos, se regenera solo en cada commit |
-| Tests | ✅ **181 en verde**, ninguno salteado, 5 deseleccionados |
+| Tests | ✅ **198 en verde**, ninguno salteado, 5 deseleccionados |
 | Multi-tenant | ✅ dos tenants en Supabase, aislamiento probado contra la base real |
 
 ### Configuración vigente
@@ -340,13 +340,21 @@ Para escucharlo: [`docs/procesos/probar-un-tenant-a-oido.md`](procesos/probar-un
 catálogo, no con la clonada del negocio, así que en los niveles 2 y 3 los dos
 tenants suenan igual y parece que el aislamiento está roto.
 
-> **Agujero conocido, para antes del primer cliente real:** `POST /api/token`
-> acepta el `tenant` en el cuerpo del pedido, de quien sea. Hoy no importa
-> porque los dos tenants son nuestros, pero con clientes de verdad cualquiera
-> podría invocar el agente de otro negocio pidiéndolo por nombre. El tenant
-> tendría que salir del dominio donde está embebido el widget, no del cuerpo
-> del pedido. No lo arregles ahora: anotalo para la fase que abra el alta de
-> clientes.
+**El tenant sale del dominio, no del navegador** (cerrado el 2026-08-10).
+Antes `POST /api/token` aceptaba el `tenant` en el cuerpo del pedido, de quien
+sea: con un `curl` y el slug de un negocio te llevabas su agente real, con su
+prompt, sus servicios y su voz clonada.
+
+Ahora sale de la cabecera `Origin`, que la pone el navegador y el código de
+una página no puede cambiar. La tabla `tenant_dominios` dice qué dominio es de
+quién. Fuera de producción el cuerpo se sigue honrando, que es como se prueba
+el aislamiento a oído en local.
+
+> **No es una frontera criptográfica.** Un cliente que no sea un navegador
+> puede mandar el `Origin` que quiera. Corta el caso real —que una página se
+> lleve el agente de otro negocio— y para el resto están los límites por IP.
+> La protección fuerte necesita un secreto por tenant, y eso va cuando exista
+> el alta de clientes.
 
 Lo que sigue son las Fases 9 y 10, cada una con su plan propio.
 
@@ -400,6 +408,7 @@ Cada una tiene un test que la cubre. **No las repitas.**
 | **Una variable de entorno de usuario de Windows le gana al `.env`** | `python-dotenv` no pisa lo que ya existe. `AZURE_OPENAI_API_KEY` estaba definida a nivel usuario con la `key1` muerta, así que el `.env` no se leía nunca y todo daba 401 con el endpoint y el deployment correctos. Costó media tarde. Ante un 401 que no cierra: `[Environment]::GetEnvironmentVariable('X','User')` antes que cualquier otra cosa |
 | Azure tiene dos claves y una puede estar muerta | `key1` daba 401 y `key2` conectaba. El portal las muestra iguales y no dice cuál está viva. Probar las dos antes de dar la credencial por mala |
 | Publicar muestras de voz sin normalizar | Salieron con 15 dB de diferencia entre sí (`alloy` −18,6 contra `sage` −33,5). En un selector que existe para comparar, la más baja se juzga peor voz. `loudnorm=I=-16` y quedan todas parejas |
+| Comparar el entorno contra una sola palabra | `if entorno == "produccion"` con un `.env` que dice `development` y una VM que dice `production` deja el candado abierto sin que se note. Se lista lo que **afloja** (`ENTORNOS_DE_DESARROLLO`), no lo que aprieta: así un valor en otro idioma, mal escrito o vacío falla cerrado |
 
 ---
 
