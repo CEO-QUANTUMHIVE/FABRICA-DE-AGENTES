@@ -29,23 +29,46 @@ nada: no tiene herramientas. Esta fase le da capacidades, y las separa en dos
 juegos según con quién habla.
 
 ```text
-registry_publico    get_services, get_business_info,
-                    capture_lead, transfer_to_human
+registry_publico   el visitante que llega a la landing
+                   get_services, get_business_info,
+                   capture_lead, transfer_to_human
 
-registry_receptor   registry_publico
-                    + crear_negocio, guardar_expediente,
-                      disparar_web_factory
+registry_interno   el dueño del negocio, en su panel de control
+                   registry_publico
+                   + get_mis_leads, get_mis_metricas, get_mis_conversaciones
 ```
+
+### Divergencia deliberada con el spec
+
+**El §6 del spec le da `crear_negocio`, `guardar_expediente` y
+`disparar_web_factory` al registry del receptor. Este plan NO las implementa
+como tools, por decisión de Sergio el 2026-08-11:**
+
+> Nadie puede crear negocios ni agentes salvo el dueño de QuantumHive. El
+> dueño de un negocio, hablando con su agente en modo interno, tampoco puede
+> crear nada.
+
+Es más seguro que lo que decía el spec. Si crear un negocio fuera una tool
+conversacional, cualquiera que llegue al agente receptor podría dar de alta
+uno convenciéndolo — y taparlo con autenticación es defender un agujero que no
+hacía falta abrir.
+
+**Dar de alta un negocio es una operación de la fábrica, no de una
+conversación.** Va por el camino de escritura de `repositorio.py`, llamado por
+la API de la fábrica detrás de login de administrador. No es de esta fase.
+
+El modo interno del dueño es **solo de lectura sobre lo suyo**. Eso también
+cierra el otro riesgo: aunque a alguien se le filtre el acceso al modo interno,
+lo peor que puede hacer es leer, no crear.
+
+**Actualizar el §6 del spec** para que refleje esto.
 
 **Lo que esta fase NO hace:**
 
-- **No implementa `disparar_web_factory`.** La fábrica de webs es otro sistema
-  y su contrato no está definido. Se registra la tool y se deja fallando con un
-  mensaje claro.
-- **No agrega autenticación.** El registry del receptor solo lo puede pedir un
-  tenant con perfil de receptor, y eso se verifica en código. Pero *quién*
-  tiene derecho a hablar con el agente receptor sigue sin resolverse: ver
-  Riesgos.
+- **No crea nada.** Ni negocios, ni agentes, ni servicios. Ninguna tool
+  escribe, salvo `capture_lead`, que agrega un interesado y nada más.
+- **No agrega autenticación.** El modo interno se resuelve por perfil, y quién
+  tiene derecho a pedirlo se resuelve antes del panel de control. Ver Riesgos.
 - **No toca `usage_daily` ni el kill-switch.** Eso es Fase 10.
 
 ## Estado verificado del código (2026-08-11)
@@ -84,13 +107,20 @@ Antes de escribir este plan se leyeron los archivos, no la memoria:
 --
 -- El orden importa: tenant_tools gana sobre profile_tools. Asi se le puede
 -- dar o quitar una capacidad a un cliente sin tocar a los demas de su rubro.
+--
+-- NINGUNA tool crea negocios ni agentes. Dar de alta un negocio es una
+-- operacion de la fabrica detras de login, no algo que un agente haga porque
+-- alguien se lo pida bien.
 
 create table tools (
     nombre text primary key,
     descripcion text not null,
-    -- 'publico' o 'receptor'. El del receptor es un superconjunto: incluye
-    -- todas las publicas mas las suyas.
-    registry text not null check (registry in ('publico', 'receptor')),
+    -- 'publico' es el visitante; 'interno' es el dueño del negocio en su
+    -- panel. El interno es un superconjunto: tambien atiende.
+    registry text not null check (registry in ('publico', 'interno')),
+    -- Ninguna tool de esta fase escribe, salvo capture_lead. Se deja
+    -- declarado para que agregar una que escriba sea una decision visible.
+    escribe boolean not null default false,
     created_at timestamptz not null default now()
 );
 
@@ -124,22 +154,23 @@ create index leads_tenant_id_idx on leads(tenant_id, created_at desc);
 
 -- ── Catalogo ───────────────────────────────────────────────────────────
 
-insert into tools (nombre, descripcion, registry) values
-    ('get_services',      'Los servicios reales del negocio', 'publico'),
-    ('get_business_info', 'Horarios, direccion y datos del negocio', 'publico'),
-    ('capture_lead',      'Guarda a un interesado con su contacto', 'publico'),
-    ('transfer_to_human', 'Deja constancia de que pidieron hablar con una persona', 'publico'),
-    ('crear_negocio',     'Da de alta un negocio nuevo', 'receptor'),
-    ('guardar_expediente','Guarda lo que se averiguo del negocio', 'receptor'),
-    ('disparar_web_factory', 'Le pide a la fabrica de webs que arme el sitio', 'receptor');
+insert into tools (nombre, descripcion, registry, escribe) values
+    ('get_services',      'Los servicios reales del negocio', 'publico', false),
+    ('get_business_info', 'Horarios, direccion y datos del negocio', 'publico', false),
+    ('capture_lead',      'Guarda a un interesado con su contacto', 'publico', true),
+    ('transfer_to_human', 'Deja constancia de que pidieron hablar con una persona', 'publico', false),
+    ('get_mis_leads',     'Los interesados que dejaron contacto en este negocio', 'interno', false),
+    ('get_mis_metricas',  'Cuantas conversaciones hubo y como salieron', 'interno', false),
+    ('get_mis_conversaciones', 'El historial de charlas de este negocio', 'interno', false);
 
 -- Todos los verticales arrancan con las publicas.
 insert into profile_tools (perfil_slug, tool)
     select p.slug, t.nombre from agent_profiles p, tools t where t.registry = 'publico';
 
--- Y el receptor ademas con las suyas.
+-- Las internas las tiene cualquier vertical: son de lectura sobre lo propio.
+-- Lo que decide si se alcanzan no es el vertical, es el MODO de la sesion.
 insert into profile_tools (perfil_slug, tool)
-    select 'receptor', nombre from tools where registry = 'receptor';
+    select p.slug, t.nombre from agent_profiles p, tools t where t.registry = 'interno';
 ```
 
 - [ ] **Step 2: Aplicar**
@@ -176,11 +207,11 @@ es que el resolver no la devuelva.
 `tests/test_registro_de_tools.py`:
 
 ```python
-"""El test que bloquea el merge de la Fase 9 (spec S6).
+"""El test que bloquea el merge de la Fase 9.
 
-Un tenant publico no puede alcanzar una tool del receptor, aunque el modelo
-la invente o alguien la inyecte por prompt. La defensa es que el resolver no
-la devuelva: no hay ninguna otra.
+Quien habla desde una landing publica no puede alcanzar una tool interna,
+aunque el modelo la invente o alguien la inyecte por prompt. La defensa es
+que el resolver no la devuelva: no hay ninguna otra.
 """
 
 from __future__ import annotations
@@ -188,6 +219,7 @@ from __future__ import annotations
 import pytest
 
 from motor_voz.brain.tools.registro import (
+    MODO_POR_DEFECTO,
     RegistryDesconocido,
     ToolNoPermitida,
     registry_de,
@@ -196,22 +228,29 @@ from motor_voz.brain.tools.registro import (
 )
 
 PUBLICAS = {"get_services", "get_business_info", "capture_lead", "transfer_to_human"}
-DEL_RECEPTOR = {"crear_negocio", "guardar_expediente", "disparar_web_factory"}
+INTERNAS = {"get_mis_leads", "get_mis_metricas", "get_mis_conversaciones"}
 
 
 class TestQueRegistryLeToca:
-    def test_el_perfil_receptor_usa_el_registry_del_receptor(self):
-        assert registry_de("receptor") == "receptor"
+    def test_el_modo_interno_alcanza_el_registry_interno(self):
+        assert registry_de("interno") == "interno"
 
-    @pytest.mark.parametrize("perfil", ["capilar", "gastronomia", "cualquier-vertical-nuevo"])
-    def test_cualquier_otro_perfil_es_publico(self, perfil):
-        """Falla cerrado: un vertical nuevo no hereda las del receptor."""
-        assert registry_de(perfil) == "publico"
+    @pytest.mark.parametrize("modo", ["publico", "", "  ", "INTERNO", "admin", "inventado"])
+    def test_cualquier_otra_cosa_es_publica(self, modo):
+        """Falla cerrado: un modo vacio, mal escrito o inventado es publico.
+
+        Es lo que decide si alguien ve los leads de un negocio. Un typo no
+        puede abrirlo.
+        """
+        assert registry_de(modo) == "publico"
+
+    def test_el_default_es_publico(self):
+        assert MODO_POR_DEFECTO == "publico"
 
 
-class TestUnTenantPublicoNoAlcanzaLasDelReceptor:
-    @pytest.mark.parametrize("nombre", sorted(DEL_RECEPTOR))
-    def test_no_las_resuelve(self, nombre):
+class TestDesdeLaLandingNoSeAlcanzaLoInterno:
+    @pytest.mark.parametrize("nombre", sorted(INTERNAS))
+    def test_no_resuelve_las_internas(self, nombre):
         with pytest.raises(ToolNoPermitida):
             resolver_tool("publico", nombre)
 
@@ -219,25 +258,41 @@ class TestUnTenantPublicoNoAlcanzaLasDelReceptor:
     def test_si_resuelve_las_publicas(self, nombre):
         assert resolver_tool("publico", nombre) is not None
 
-    def test_el_receptor_alcanza_las_dos(self):
-        for nombre in PUBLICAS | DEL_RECEPTOR:
-            assert resolver_tool("receptor", nombre) is not None
+    def test_el_modo_interno_alcanza_las_dos(self):
+        for nombre in PUBLICAS | INTERNAS:
+            assert resolver_tool("interno", nombre) is not None
 
     def test_una_tool_inventada_no_se_resuelve(self):
         """El modelo alucina nombres de tools. No puede alcanzar nada."""
         with pytest.raises(ToolNoPermitida):
-            resolver_tool("receptor", "borrar_todo")
+            resolver_tool("interno", "borrar_todo")
+
+
+class TestNadieCreaNegociosHablando:
+    """La regla de Sergio, 2026-08-11: ni el visitante ni el dueño crean nada.
+
+    Dar de alta un negocio es una operacion de la fabrica detras de login. Si
+    alguna vez aparece como tool, este test se rompe y hay que discutirlo.
+    """
+
+    @pytest.mark.parametrize(
+        "nombre", ["crear_negocio", "crear_agente", "crear_tenant", "disparar_web_factory"]
+    )
+    @pytest.mark.parametrize("modo", ["publico", "interno"])
+    def test_ningun_modo_alcanza_una_tool_que_cree(self, modo, nombre):
+        with pytest.raises(ToolNoPermitida):
+            resolver_tool(modo, nombre)
 
 
 class TestElCatalogo:
-    def test_las_del_receptor_incluyen_las_publicas(self):
-        """El registry del receptor es un superconjunto, no otro juego."""
-        assert PUBLICAS < tools_de("receptor")
+    def test_lo_interno_incluye_lo_publico(self):
+        """El dueño tambien atiende: es un superconjunto, no otro juego."""
+        assert PUBLICAS < tools_de("interno")
 
     def test_ningun_registry_esta_vacio(self):
         """Sin esta guarda, un resolver roto pasaria los tests de arriba."""
         assert tools_de("publico")
-        assert tools_de("receptor")
+        assert tools_de("interno")
 
     def test_un_registry_que_no_existe_falla(self):
         with pytest.raises(RegistryDesconocido):
@@ -261,10 +316,18 @@ eso, cualquier función que exista pasa a ser alcanzable.
 ```python
 """Que puede hacer un agente, y quien puede hacer que.
 
-Dos registries (spec S6): el publico, que usan los agentes que atienden
-visitantes, y el del receptor, que ademas puede dar de alta negocios.
+Dos registries, y lo que decide cual toca es el MODO de la sesion, no el
+vertical del negocio:
 
-El del receptor es un SUPERCONJUNTO del publico, no otro juego.
+    publico   el visitante que llega a la landing
+    interno   el dueño del negocio, en su panel de control
+
+El interno es un SUPERCONJUNTO del publico: el dueño tambien atiende.
+
+NINGUN registry crea negocios ni agentes. Dar de alta es una operacion de la
+fabrica detras de login, no algo que un agente haga porque se lo pidan bien.
+Hay un test que lo fija (TestNadieCreaNegociosHablando): si alguna vez
+aparece una tool que cree, se rompe y hay que discutirlo.
 
 Este modulo no importa livekit ni Supabase. Las tools reciben lo que
 necesitan como argumento, asi las reusa el canal asincrono (WhatsApp) sin
@@ -275,7 +338,14 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from motor_voz.brain.tools import publicas, receptor
+from motor_voz.brain.tools import internas, publicas
+
+MODO_POR_DEFECTO = "publico"
+"""Lo que se usa cuando nadie dijo nada, y cuando lo que dijeron no se entiende.
+
+Esto decide si alguien ve los leads de un negocio. Un modo vacio, mal escrito
+o inventado tiene que caer del lado seguro.
+"""
 
 
 class ToolNoPermitida(PermissionError):
@@ -291,7 +361,8 @@ class RegistryDesconocido(ValueError):
 
 
 # El mapa es la frontera. Una funcion que no este aca no es alcanzable,
-# aunque exista en el modulo y aunque el modelo invente su nombre.
+# aunque exista en el modulo y aunque el modelo invente su nombre. Por eso es
+# un mapa explicito y no un getattr sobre el modulo.
 _PUBLICAS: dict[str, Callable] = {
     "get_services": publicas.get_services,
     "get_business_info": publicas.get_business_info,
@@ -299,26 +370,28 @@ _PUBLICAS: dict[str, Callable] = {
     "transfer_to_human": publicas.transfer_to_human,
 }
 
-_DEL_RECEPTOR: dict[str, Callable] = {
-    "crear_negocio": receptor.crear_negocio,
-    "guardar_expediente": receptor.guardar_expediente,
-    "disparar_web_factory": receptor.disparar_web_factory,
+_INTERNAS: dict[str, Callable] = {
+    "get_mis_leads": internas.get_mis_leads,
+    "get_mis_metricas": internas.get_mis_metricas,
+    "get_mis_conversaciones": internas.get_mis_conversaciones,
 }
 
 _REGISTRIES: dict[str, dict[str, Callable]] = {
     "publico": _PUBLICAS,
-    # El del receptor incluye las publicas: un receptor tambien atiende.
-    "receptor": _PUBLICAS | _DEL_RECEPTOR,
+    "interno": _PUBLICAS | _INTERNAS,
 }
 
 
-def registry_de(perfil_slug: str) -> str:
-    """Que registry le toca a un perfil.
+def registry_de(modo: str) -> str:
+    """Que registry le toca a un modo de sesion.
 
-    Falla cerrado: solo el perfil `receptor` alcanza el suyo. Un vertical
-    nuevo es publico sin que nadie tenga que acordarse de declararlo.
+    Falla cerrado: SOLO el string exacto `interno` abre lo interno. Vacio,
+    con mayusculas, con espacios o inventado cae en publico.
+
+    Se lista lo que ABRE, no lo que cierra. Comparar contra lo que cierra
+    —`if modo != "publico"`— dejaria pasar cualquier valor raro.
     """
-    return "receptor" if perfil_slug == "receptor" else "publico"
+    return "interno" if modo == "interno" else MODO_POR_DEFECTO
 
 
 def tools_de(registry: str) -> set[str]:
@@ -337,6 +410,12 @@ def resolver_tool(registry: str, nombre: str) -> Callable:
         raise ToolNoPermitida(f"El registry '{registry}' no alcanza la tool '{nombre}'.")
     return funcion
 ```
+
+**De dónde sale el `modo`.** Del token, firmado, igual que el tenant y el
+motor — nunca de algo que mande el navegador. Y `POST /api/token` solo puede
+conceder `interno` cuando sepa quién pide, o sea **cuando exista login**. Hasta
+entonces la API siempre emite `publico`, y el modo interno solo se alcanza en
+desarrollo. Eso es de la fase de autenticación, no de esta.
 
 - [ ] **Step 4: Correr — y correr la frontera**
 
@@ -391,43 +470,54 @@ hay un test con AST que lo hace cumplir. No lo esquives.
 
 ---
 
-### Task 4: Las tools del receptor
+### Task 4: Las tools internas
 
 **Files:**
-- Create: `src/motor_voz/brain/tools/receptor.py`
-- Create: `tests/test_tools_receptor.py`
-- Modify: `src/motor_voz/brain/tenants/repositorio.py` (`crear_tenant`, `guardar_expediente`)
+- Create: `src/motor_voz/brain/tools/internas.py`
+- Create: `tests/test_tools_internas.py`
+- Modify: `src/motor_voz/brain/tenants/repositorio.py` (`leads_de`, `metricas_de`)
 
-**Acá aparece el camino de escritura que hoy no existe.** `crear_negocio` es la
-primera función que da de alta un tenant desde código en vez de una migración
-SQL escrita a mano.
+Las tres son **de lectura sobre lo propio**. Ninguna escribe. Es lo que el
+dueño ve cuando le pregunta a su agente en el panel: *"¿cuántos contactos me
+dejaron esta semana?"*, *"¿cómo vengo?"*.
 
 - [ ] **Step 1: Los tests que importan**
 
-1. `crear_negocio` con un slug que ya existe **no** pisa el que está.
-2. Un slug se normaliza antes de guardarse: minúsculas, sin espacios, sin
-   guiones (los slugs usan guion bajo porque el nombre de sala se parte por
-   guion — ver `brain/tenants/resolver.py`).
-3. `disparar_web_factory` **falla con un mensaje claro**, no en silencio: la
-   fábrica de webs es otro sistema y su contrato no existe todavía.
+1. `get_mis_leads` devuelve **solo** los del tenant resuelto. Con dos tenants
+   sembrados, los conjuntos son disjuntos.
+2. **Ninguna acepta un `tenant_id` por argumento.** Si lo aceptara, el modelo
+   podría pasarle el de otro negocio, y el modelo obedece a quien le habla.
+3. `get_mis_metricas` con un tenant sin conversaciones devuelve ceros, no
+   rompe. Un negocio recién dado de alta es el caso normal, no el raro.
+4. Los leads salen ordenados por fecha, del más nuevo al más viejo: nadie
+   pregunta por el contacto de hace tres meses primero.
 
 - [ ] **Step 2: Implementar**
 
-`disparar_web_factory` así, a propósito:
+Firma de las tres, sin excepción:
 
 ```python
-async def disparar_web_factory(tenant: Tenant, config: Config, **_) -> str:
-    """Todavia no hay a quien pedirselo.
-
-    Devuelve un mensaje en vez de fallar callado: el agente se lo dice al
-    visitante y no queda prometiendo algo que no va a pasar.
-    """
-    return (
-        "Todavia no puedo armar el sitio solo. Lo anoto y lo hace una persona."
-    )
+async def get_mis_leads(tenant: Tenant, config: Config, *, desde_dias: int = 30) -> str:
+    """El tenant sale del argumento, nunca del modelo."""
 ```
 
-- [ ] **Step 3: Correr**
+`get_mis_conversaciones` depende de que existan `sessions` y
+`conversation_turns`, **que son de la Fase 10**. Devolvé un mensaje honesto en
+vez de fallar callado, igual que se hace con lo que todavía no existe:
+
+```python
+async def get_mis_conversaciones(tenant: Tenant, config: Config, **_) -> str:
+    """Todavia no se guardan las conversaciones: es de la Fase 10."""
+    return "Todavia no estoy guardando el historial de charlas."
+```
+
+- [ ] **Step 3: Agregar las lecturas al repositorio**
+
+`leads_de(config, tenant_id)` y `metricas_de(config, tenant_id)` van en
+`repositorio.py`, con su `.eq("tenant_id", ...)`. Es el único punto que habla
+con Supabase y hay un test con AST que lo hace cumplir.
+
+- [ ] **Step 4: Correr**
 
 ---
 
@@ -443,9 +533,22 @@ y la de memoria del worker, que no se toca.
 - [ ] **Step 1: Enganchar las tools al `Agent`**
 
 Las tools van en el `Agent`, no en la `AgentSession`. El registry sale de
-`registry_de(tenant.perfil.slug)`, y cada tool se envuelve para que reciba el
-`tenant` y el `config` ya resueltos — así el modelo nunca elige a quién le
-aplica.
+`registry_de(modo)`, y **el modo sale de la metadata firmada del token**, igual
+que el motor y el tenant. Nunca de algo que mande el navegador.
+
+Cada tool se envuelve para que reciba el `tenant` y el `config` ya resueltos —
+así el modelo nunca elige a quién le aplica.
+
+- [ ] **Step 1b: Que el modo llegue firmado**
+
+`api/servidor.py` mete `modo` en la metadata del token. **En producción siempre
+`publico`**, porque conceder `interno` requiere saber quién pide y eso todavía
+no existe. Un test que lo fije:
+
+```python
+async def test_en_produccion_el_token_nunca_concede_modo_interno(self, cliente):
+    """Conceder interno sin login seria regalar los leads de un negocio."""
+```
 
 - [ ] **Step 2: Verificar que la frontera sigue en pie**
 
@@ -467,20 +570,25 @@ Con el nivel 1 en local (ver
 - [ ] Preguntarle a la barbería por sus servicios → los suyos, no los de
       QuantumHive
 - [ ] Dejarle un contacto → aparece en `leads` con el `tenant_id` correcto
-- [ ] Pedirle a la barbería que **cree un negocio** → no puede, y lo dice sin
-      inventar que lo hizo
+- [ ] Pedirle que **cree un negocio** → no puede, y lo dice sin inventar que lo
+      hizo
+- [ ] Pedirle **los leads** desde la landing pública → no puede. Es el que más
+      importa: ahí es donde se filtrarían los datos de un cliente
 
 - [ ] **Step 3: Documentar en `docs/resultados/fase9-tools.md`**
 
 **Gate de la Fase 9 — no se avanza a la Fase 10 sin esto:**
 
-1. Un tenant público no resuelve ninguna tool del receptor, probado por test.
+1. Desde el modo público no se resuelve ninguna tool interna, probado por test.
 2. Una tool inventada por el modelo no resuelve nada.
-3. `capture_lead` guarda siempre con el tenant resuelto; no hay camino para
+3. **Ningún modo alcanza una tool que cree negocios o agentes.** Es la regla
+   de Sergio y hay un test que se rompe si alguien la agrega.
+4. `capture_lead` guarda siempre con el tenant resuelto; no hay camino para
    pasarle otro.
-4. `brain/tools/` no importa `livekit` (`test_frontera.py` en verde).
-5. A oído: cada tenant responde con sus datos y el público no puede crear
-   negocios.
+5. En producción el token nunca concede modo interno.
+6. `brain/tools/` no importa `livekit` (`test_frontera.py` en verde).
+7. A oído: cada tenant responde con sus datos, y desde la landing no se
+   alcanzan ni los leads ni la creación.
 
 ---
 
@@ -488,8 +596,9 @@ Con el nivel 1 en local (ver
 
 | Riesgo | Señal temprana | Qué hacer |
 |---|---|---|
-| **El registry del receptor no tiene autenticación detrás** | Cualquiera que llegue al agente receptor puede crear negocios | Es el agujero grande de la fase. El resolver verifica el *perfil*, no *quién habla*. Hoy alcanza porque al receptor solo se llega desde nuestra landing, pero **antes del panel de control hay que resolver login**. Está anotado en el brief |
+| **El modo interno no tiene autenticación detrás** | Alguien alcanza los leads de un negocio sin ser su dueño | El resolver verifica el *modo*, no *quién habla*. Por eso en producción la API **nunca** concede `interno`: hasta que exista login, el modo interno solo se alcanza en desarrollo. Es la fase siguiente y va **antes del panel de control** |
 | Las tools se declaran en la base y en el código, y pueden desincronizarse | El catálogo tiene una tool que el resolver no conoce, o al revés | Un test que cruce `tools` de Supabase contra `_REGISTRIES`. Va en la Task 2 si es barato, o en la 6 |
-| `crear_negocio` es el primer camino de escritura y toca aislamiento | Un slug mal normalizado, o un tenant que pisa a otro | Los tests de la Task 4 son el gate. No lo apures |
+| Alguien agrega una tool que crea negocios | Vuelve el agujero que esta fase evitó | `TestNadieCreaNegociosHablando` se rompe. Si se rompe, no se arregla el test: se discute la decisión |
 | El modelo inventa argumentos, no solo nombres de tools | Una tool recibe `tenant_id` o `precio` que el visitante nunca dijo | Ninguna tool acepta identificadores por argumento. Lo que decide *a quién* se aplica sale del tenant resuelto, siempre |
+| `get_mis_conversaciones` promete algo que no existe | El agente dice que va a mostrar el historial y no muestra nada | Devuelve un mensaje honesto. Las tablas son de la Fase 10 |
 | Aplicar los snippets de este plan sin leer el archivo | Se borra código que funciona, como pasó en las Fases 5-8 | Está escrito arriba y en `docs/procesos/README.md`. Leé el archivo primero |
