@@ -5,6 +5,53 @@ reglas existen para eso: no son estilo, son plata.
 
 ---
 
+## 0. ESTO ESTÁ EN PRODUCCIÓN. NO SE TOCA PARA PROBAR NADA
+
+Este repo y su VM atienden clientes reales, ahora mismo. Cientos de sesiones
+por día.
+
+### Si viniste a usar el motor de voz para otro producto: CLONÁ, NO MODIFIQUES
+
+El motor de voz aislado vive en su propio repositorio, y existe justamente
+para esto:
+
+> **https://github.com/CEO-QUANTUMHIVE/SOLO-MOTOR-DE-VOZ-**
+
+Ahí está el motor solo, sin tenants ni base de datos, con su `CLAUDE.md`, sus
+recetas por producto y sus trampas. Llevate una copia y adaptala en el repo de
+tu producto.
+
+**No adaptes este repo a tu producto.** Acá el motor atiende agentes
+infinitos; el tuyo atiende uno. Son cosas distintas que comparten motor.
+
+### Prohibido, sin excepciones
+
+- **Tocar el `.env` de la VM.** Ni para probar, ni "un segundo", ni con
+  backup. Un `MOTOR=openai` para probar Azure deja a todos los clientes en el
+  motor equivocado. Un `LIVEKIT_AGENT_NAME` hace que el worker **deje de
+  atender toda sala que no lo nombre**: la landing entera se queda muda.
+- **Reiniciar los servicios** (`motor-voz-api`, `motor-voz-agente`) para
+  probar algo.
+- **Matar procesos** en la VM.
+- **Levantar procesos a mano** al lado de los de systemd. Se pelean por el
+  puerto 8080.
+
+Pasó el 2026-08-11: un agente cambió tres líneas del `.env` de la VM para
+probar Azure. No explotó de casualidad, porque los procesos ya estaban
+corriendo y el `.env` solo se lee al arrancar. El primer reinicio hubiera
+dejado la landing sin agente.
+
+### Lo que sí se puede
+
+Leer todo. Correr los tests, que no llaman a ninguna API. Escribir código y
+tests en el repo, commitear y pushear.
+
+**Desplegar es otra cosa:** se hace siguiendo
+[`docs/procesos/desplegar.md`](docs/procesos/desplegar.md), con sus dos reglas
+duras, y no improvisando en la VM.
+
+---
+
 ## 1. REGLA DURA: el grafo primero, siempre
 
 Hay un grafo de conocimiento en `graphify-out/` que **se regenera solo en
