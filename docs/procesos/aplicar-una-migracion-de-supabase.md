@@ -1,13 +1,26 @@
 # Aplicar una migración de Supabase
 
-Proyecto: `bcexirhurfigrehfarol`. Las migraciones viven en
-`supabase/migrations/`, numeradas y en orden.
+| | |
+|---|---|
+| Proyecto | `bcexirhurfigrehfarol` — *motor de voz y llm* |
+| Región | **`us-west-2`**, West US (Oregon) |
+| Pooler (IPv4) | `aws-1-us-west-2.pooler.supabase.com` |
+| Directo (IPv6) | `db.bcexirhurfigrehfarol.supabase.co` |
+
+Las migraciones viven en `supabase/migrations/`, numeradas y en orden.
 
 ## El comando
 
+**Usá el pooler.** El host directo es IPv6-only y el día que se caiga la
+salida IPv6 no vas a poder migrar (ver abajo).
+
 ```bash
-supabase db push --db-url "postgresql://postgres:CONTRASEÑA@db.bcexirhurfigrehfarol.supabase.co:5432/postgres"
+supabase db push --db-url "postgresql://postgres.bcexirhurfigrehfarol:CONTRASEÑA@aws-1-us-west-2.pooler.supabase.com:5432/postgres"
 ```
+
+Ojo con dos detalles del pooler: el usuario es **`postgres.<ref>`**, no
+`postgres` a secas, y el prefijo del host es **`aws-1-`**, no `aws-0-` — con
+`aws-0-` este proyecto responde `tenant not found`.
 
 La contraseña va **codificada para URL** (`$` es `%24`, `@` es `%40`). Nunca
 la escribas literal en la línea de comandos: leela de un archivo o de una
@@ -45,17 +58,14 @@ Test-NetConnection -ComputerName 'LA-IPv6-QUE-SALIO' -Port 5432 -InformationLeve
 Si resuelve pero el puerto da `False`, es la salida IPv6, no el DNS ni la
 contraseña.
 
-**El camino IPv4 es el pooler**, pero necesitás **la región del proyecto**, y
-el connection string del pooler no está en el archivo de credenciales: sale
-del dashboard, en Connect. Adivinar la región no sirve — todas responden
-`tenant/user not found` menos la correcta.
+**El camino IPv4 es el pooler**, y para eso necesitás la región. La de este
+proyecto está arriba: `us-west-2`, con prefijo `aws-1-`.
 
-```
-postgresql://postgres.<REF>:<PWD>@aws-0-<REGION>.pooler.supabase.com:5432/postgres
-```
-
-**Anotá la región del proyecto en el archivo de credenciales.** Sin eso, el
-día que se caiga IPv6 no hay forma de aplicar una migración.
+Si alguna vez trabajás con otro proyecto y no sabés la región, **no la
+adivines** — todas responden `tenant/user not found` menos la correcta. Sale
+del dashboard, en la tarjeta *Primary Database*. Y si no tenés acceso al
+dashboard, el IPv6 del host directo es de AWS y su prefijo delata la región;
+el de la API no sirve porque está detrás de Cloudflare.
 
 La API por HTTPS (la que usan el motor y los tests) **no se ve afectada**: va
 por IPv4 contra `https://<ref>.supabase.co`. Que los tests de integración
