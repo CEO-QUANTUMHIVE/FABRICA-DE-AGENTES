@@ -45,6 +45,8 @@ Se elige con `MOTOR=` en el `.env`, o por sesión desde la demo web.
 | Grafo de conocimiento | ✅ ~600 nodos, se regenera solo en cada commit |
 | Tests | ✅ **252 en verde**, ninguno salteado, 5 deseleccionados |
 | Multi-tenant | ✅ dos tenants en Supabase, aislamiento probado contra la base real |
+| Tools del agente | ✅ Fase 9: público e interno, nadie crea negocios hablando |
+| Motor de voz aislado | ✅ repo propio [`SOLO-MOTOR-DE-VOZ-`](https://github.com/CEO-QUANTUMHIVE/SOLO-MOTOR-DE-VOZ-) para que cada producto se lleve una copia |
 
 ### Configuración vigente
 
@@ -364,10 +366,12 @@ el aislamiento a oído en local.
 
 ---
 
-### 3.7 Fase 9 — tools y registries ← CÓDIGO HECHO, FALTA APLICAR LA MIGRACIÓN
+### 3.7 Fase 9 — tools y registries ✅ HECHA (2026-08-11)
 
 Plan: [`2026-08-11-motor-voz-fase-9.md`](superpowers/plans/2026-08-11-motor-voz-fase-9.md).
-Tasks 1 a 5 hechas. **252 tests en verde.**
+Resultado: [`fase9-tools.md`](resultados/fase9-tools.md).
+Las 6 tasks, migración `0006` aplicada. **252 tests en verde** más 2 de
+integración.
 
 El agente pasó de solo saber cosas a poder hacerlas:
 
@@ -394,24 +398,30 @@ Tres cosas que quedaron blindadas:
 - **Ninguna tool ve el tenant ni la sala.** Se atan y se sacan de la firma
   antes de entregársela al modelo, que si no le pasaría el de otro negocio.
 
-**Lo que falta:** aplicar la migración `0006` y la verificación a oído (Task 6
-del plan). `MODO_DE_LA_SESION` está fijo en `publico` a propósito hasta que
-exista login.
+**Verificado contra la base real:** un lead de la barbería **no** lo ve
+QuantumHive, desde el modo público no se alcanza ninguna tool interna, y
+ningún modo alcanza `crear_negocio`.
+
+**Falta la verificación a oído**: que el agente use las tools cuando
+corresponde y no invente. Lo de arriba prueba el aislamiento por código.
 
 ---
 
-Después va la Fase 10, con su plan propio.
+### 3.8 Autenticación ← LO SIGUIENTE, Y VA ANTES DEL PANEL
 
-**Falta algo que no cubre ninguna de las dos: autenticación.** El modo interno
-del agente —el que habla de métricas en el panel del cliente— solo lo puede
-abrir el dueño de ese negocio. Hoy en este repo **no hay login de ningún
-tipo**: `POST /api/token` no le pide identidad a nadie, y el aislamiento por
-dominio sirve para el modo público pero no alcanza para el interno, donde hay
-datos del negocio en juego.
+**Hoy no hay login de ningún tipo.** `POST /api/token` no le pide identidad a
+nadie. El aislamiento por dominio alcanza para el modo público, pero el
+interno da acceso a los leads y las métricas de un negocio.
 
-La Fase 9 resuelve *qué herramientas* tiene cada modo. No resuelve *quién
-tiene derecho* a pedir el modo interno. Eso hay que planificarlo aparte, y va
-antes del panel de control.
+Por eso `MODO_DE_LA_SESION` en `voice/agente.py` está **fijo en `publico`**, y
+no leído de la sala ni del token: se dejó fijo a propósito para que nadie lo
+confunda con algo que ya funciona. Cuando exista login, sale de la metadata
+firmada del token — nunca de algo que mande el navegador.
+
+**Si el panel de control sale antes que esto, sale con la puerta abierta.**
+
+Después viene la Fase 10 (límites de gasto, kill-switch, degradación, eventos
+hacia Quantum Core) y la fábrica de agentes.
 
 ---
 
@@ -472,12 +482,10 @@ Cada una tiene un test que la cubre. **No las repitas.**
 
 ## 6. Lo que Sergio tiene pendiente
 
-- **Anotar la región del proyecto de Supabase** en el archivo de credenciales,
-  y aplicar la migración `0006`. El host directo (`db.<ref>.supabase.co`) es
-  **IPv6-only**: el 2026-08-11 se cayó la salida IPv6 de la máquina y no hubo
-  forma de migrar. El camino IPv4 es el pooler, pero necesita la región, que
-  sale del dashboard en **Connect** y no está anotada en ningún lado.
-  Adivinarla no sirve: todas responden `tenant not found` menos la correcta
+- **Actualizar el §6 del spec.** Sigue diciendo que el agente receptor puede
+  `crear_negocio`, `guardar_expediente` y `disparar_web_factory`. Tu regla del
+  2026-08-11 lo contradice y ya está implementada así, pero si alguien lee el
+  spec y lo implementa, reabre el agujero
 - **Aplicar la migración de la Task 2** — desbloquea toda la Fase 6 en
   adelante. Dos caminos: correr `supabase link --project-ref bcexirhurfigrehfarol`
   y después `supabase db push` (el link pide la contraseña de forma
