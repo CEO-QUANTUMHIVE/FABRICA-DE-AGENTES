@@ -43,7 +43,7 @@ Se elige con `MOTOR=` en el `.env`, o por sesión desde la demo web.
 | Widget embebible | ✅ en `www.quantumhive.com.ar` (ver 3.4) |
 | Selector de voces | ✅ 8 de Gemini + 10 de OpenAI, agrupadas por género |
 | Grafo de conocimiento | ✅ ~600 nodos, se regenera solo en cada commit |
-| Tests | ✅ **198 en verde**, ninguno salteado, 5 deseleccionados |
+| Tests | ✅ **252 en verde**, ninguno salteado, 5 deseleccionados |
 | Multi-tenant | ✅ dos tenants en Supabase, aislamiento probado contra la base real |
 
 ### Configuración vigente
@@ -362,7 +362,45 @@ el aislamiento a oído en local.
 > La protección fuerte necesita un secreto por tenant, y eso va cuando exista
 > el alta de clientes.
 
-Lo que sigue son las Fases 9 y 10, cada una con su plan propio.
+---
+
+### 3.7 Fase 9 — tools y registries ← CÓDIGO HECHO, FALTA APLICAR LA MIGRACIÓN
+
+Plan: [`2026-08-11-motor-voz-fase-9.md`](superpowers/plans/2026-08-11-motor-voz-fase-9.md).
+Tasks 1 a 5 hechas. **252 tests en verde.**
+
+El agente pasó de solo saber cosas a poder hacerlas:
+
+```
+publico   get_services, get_business_info, capture_lead, transfer_to_human
+interno   las de arriba + get_mis_leads, get_mis_metricas, get_mis_conversaciones
+```
+
+**Regla dura, decidida el 2026-08-11: nadie crea negocios ni agentes
+hablando.** Ni el visitante ni el dueño en su modo interno. Dar de alta es una
+operación de la fábrica detrás de login. Esto **contradice el §6 del spec**,
+que le daba `crear_negocio` al registry del receptor — **hay que actualizar el
+spec**. Hay un test (`TestNadieCreaNegociosHablando`) que se rompe si alguien
+agrega una tool que cree: no se arregla el test, se discute.
+
+Tres cosas que quedaron blindadas:
+
+- **El registry es un mapa explícito de nombre a función**, no un `getattr`
+  sobre el módulo. Con `getattr`, cualquier función que alguien agregue queda
+  expuesta sin que nadie lo decida.
+- **`registry_de` lista lo que abre, no lo que cierra.** Solo el string exacto
+  `interno` abre lo interno; vacío, con mayúsculas o inventado cae en público.
+  Es lo que decide si alguien ve los leads de un negocio.
+- **Ninguna tool ve el tenant ni la sala.** Se atan y se sacan de la firma
+  antes de entregársela al modelo, que si no le pasaría el de otro negocio.
+
+**Lo que falta:** aplicar la migración `0006` y la verificación a oído (Task 6
+del plan). `MODO_DE_LA_SESION` está fijo en `publico` a propósito hasta que
+exista login.
+
+---
+
+Después va la Fase 10, con su plan propio.
 
 **Falta algo que no cubre ninguna de las dos: autenticación.** El modo interno
 del agente —el que habla de métricas en el panel del cliente— solo lo puede
@@ -434,6 +472,12 @@ Cada una tiene un test que la cubre. **No las repitas.**
 
 ## 6. Lo que Sergio tiene pendiente
 
+- **Anotar la región del proyecto de Supabase** en el archivo de credenciales,
+  y aplicar la migración `0006`. El host directo (`db.<ref>.supabase.co`) es
+  **IPv6-only**: el 2026-08-11 se cayó la salida IPv6 de la máquina y no hubo
+  forma de migrar. El camino IPv4 es el pooler, pero necesita la región, que
+  sale del dashboard en **Connect** y no está anotada en ningún lado.
+  Adivinarla no sirve: todas responden `tenant not found` menos la correcta
 - **Aplicar la migración de la Task 2** — desbloquea toda la Fase 6 en
   adelante. Dos caminos: correr `supabase link --project-ref bcexirhurfigrehfarol`
   y después `supabase db push` (el link pide la contraseña de forma
