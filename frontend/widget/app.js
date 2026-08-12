@@ -15,7 +15,10 @@ const parametros = new URLSearchParams(location.search);
 const API = parametros.get('api') || 'https://voz.quantumhive.com.ar';
 const TENANT = parametros.get('tenant') || 'quantumhive';
 const LOGO = parametros.get('logo') || '';
-const MODO = parametros.get('modo') === 'avatar' ? 'avatar' : 'orbe';
+const MODO_PEDIDO = parametros.get('modo');
+const MODO = MODO_PEDIDO
+  ? MODO_PEDIDO === 'avatar' ? 'avatar' : 'orbe'
+  : TENANT === 'quantumhive' ? 'avatar' : 'orbe';
 const AVATAR_BASE =
   parametros.get('avatarBase') ||
   'https://bcexirhurfigrehfarol.supabase.co/storage/v1/object/public/avatar-cache/quantumhive/landing/sol/v1';
