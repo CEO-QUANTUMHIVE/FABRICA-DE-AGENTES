@@ -20,12 +20,18 @@
   var acento = actual.getAttribute('data-acento') || '';
   var acento2 = actual.getAttribute('data-acento-2') || '';
   var clonar = actual.getAttribute('data-clonar') || '';
+  // La conversacion es siempre la misma. Esto solo elige su presencia
+  // visual: el orbe original o un avatar de video configurado por tenant.
+  var modo = actual.getAttribute('data-modo') === 'avatar' ? 'avatar' : 'orbe';
+  var avatarBase = actual.getAttribute('data-avatar-base') || '';
 
   var params = new URLSearchParams({ api: origen, tenant: tenant });
   if (logo) params.set('logo', logo);
   if (acento) params.set('acento', acento);
   if (acento2) params.set('acento2', acento2);
   if (clonar) params.set('clonar', clonar);
+  params.set('modo', modo);
+  if (avatarBase) params.set('avatarBase', avatarBase);
 
   // En un celular el panel de 420x640 no entra, y el orbe de 240 tapa
   // media pantalla. Los tamanos se calculan contra el viewport real del
@@ -44,6 +50,9 @@
   // Al alto se le suma el cartel de abajo y el aire que la onda necesita
   // por arriba del orbe.
   function tamanoCerrado() {
+    if (modo === 'avatar') {
+      return esCelular() ? { ancho: 180, alto: 260 } : { ancho: 260, alto: 390 };
+    }
     return esCelular() ? { ancho: 190, alto: 175 } : { ancho: 262, alto: 250 };
   }
 

@@ -230,6 +230,44 @@ button:disabled {
   z-index: 1;
 }
 
+/* El avatar es una segunda piel del mismo widget. El modo orbe sigue
+   siendo el predeterminado y conserva intactas sus animaciones. */
+.orbe__avatar {
+  display: none;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center top;
+  border-radius: 22px;
+  background: #0b0b0d;
+  pointer-events: none;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.5), 0 0 20px rgba(212, 175, 55, 0.22);
+}
+
+.orbe--avatar .orbe__logo,
+.orbe--avatar .orbe__vida {
+  display: none;
+}
+
+.orbe--avatar .orbe__avatar {
+  display: block;
+}
+
+.orbe--avatar:not(.orbe--abierto) .orbe__esfera {
+  width: 220px;
+  height: 320px;
+  order: 2;
+}
+
+.orbe--avatar.orbe--abierto .orbe__esfera {
+  width: 64px;
+  height: 88px;
+}
+
+.orbe--avatar:not(.orbe--abierto) .orbe__invitacion {
+  order: 1;
+}
+
 /* Cartel de invitacion: solo con el orbe colapsado. No esta en el
    original (alla el orbe vive en el escritorio, no hay que explicarlo);
    aca es la unica pista de que se puede tocar. */
@@ -244,8 +282,9 @@ button:disabled {
   padding: 5px 12px;
   white-space: nowrap;
   user-select: none;
-  pointer-events: none;
+  pointer-events: auto;
   animation: qh-latido-cartel 2.8s ease-in-out infinite;
+  cursor: pointer;
 }
 
 /* Colapsado se ve el orbe y el cartel; abierto, todo lo demas. */
@@ -815,6 +854,16 @@ button:disabled {
   .orbe--abierto .orbe__esfera {
     width: 38px;
     height: 38px;
+  }
+
+  .orbe--avatar:not(.orbe--abierto) .orbe__esfera {
+    width: 140px;
+    height: 204px;
+  }
+
+  .orbe--avatar.orbe--abierto .orbe__esfera {
+    width: 50px;
+    height: 68px;
   }
 
   /* El cartel llegaba a medir casi lo mismo que el iframe entero y se

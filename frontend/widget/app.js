@@ -15,6 +15,10 @@ const parametros = new URLSearchParams(location.search);
 const API = parametros.get('api') || 'https://voz.quantumhive.com.ar';
 const TENANT = parametros.get('tenant') || 'quantumhive';
 const LOGO = parametros.get('logo') || '';
+const MODO = parametros.get('modo') === 'avatar' ? 'avatar' : 'orbe';
+const AVATAR_BASE =
+  parametros.get('avatarBase') ||
+  'https://bcexirhurfigrehfarol.supabase.co/storage/v1/object/public/avatar-cache/quantumhive/landing/sol/v1';
 // A donde lleva "Cloná tu propia voz". Todavia no existe la fabrica de
 // voces, asi que por defecto cae a la landing; cuando exista, se cambia
 // con data-clonar en el <script> del cliente sin tocar el widget.
@@ -23,6 +27,50 @@ const URL_CLONAR =
 
 const $ = (id) => document.getElementById(id);
 const orbe = $('orbe');
+const avatar = $('avatar');
+
+orbe.classList.toggle('orbe--avatar', MODO === 'avatar');
+
+const CLIPS_AVATAR = {
+  saludo: 'connector_welcome_cut.webm',
+  invitacion: 'connector_live_invite_cut.webm',
+  espera: 'connector_idle_cut_wait.webm',
+  hablando: 'connector_idle_cut_0.webm',
+};
+let clipAvatarActual = '';
+let secuenciaInicial = MODO === 'avatar';
+
+function urlClipAvatar(nombre) {
+  return `${AVATAR_BASE.replace(/\/$/, '')}/${CLIPS_AVATAR[nombre]}`;
+}
+
+function reproducirAvatar(nombre, repetir = true) {
+  if (MODO !== 'avatar' || clipAvatarActual === nombre) return;
+  clipAvatarActual = nombre;
+  avatar.loop = repetir;
+  avatar.src = urlClipAvatar(nombre);
+  avatar.play().catch(() => {});
+}
+
+if (MODO === 'avatar') {
+  $('invitacion').textContent = 'Apretame y te atiendo';
+  $('esfera').title = 'Apretame y te atiendo';
+  $('esfera').setAttribute('aria-label', 'Abrir el asistente con avatar');
+  avatar.addEventListener('ended', () => {
+    if (secuenciaInicial && !orbe.classList.contains('orbe--abierto')) {
+      reproducirAvatar('invitacion');
+    }
+  });
+  reproducirAvatar('saludo', false);
+
+  // Deja listos los dos cambios de estado para que no aparezca un cuadro
+  // vacio justo cuando el agente empieza o termina de hablar.
+  for (const nombre of ['invitacion', 'espera', 'hablando']) {
+    const precarga = document.createElement('video');
+    precarga.preload = 'auto';
+    precarga.src = urlClipAvatar(nombre);
+  }
+}
 
 if (LOGO) $('logo').src = LOGO;
 
@@ -44,6 +92,12 @@ const ETIQUETAS = { 1: 'Clonación', 2: 'Voz humana', 3: 'Realismo extremo' };
 
 function estado(clave) {
   orbe.dataset.estado = clave;
+  if (MODO !== 'avatar') return;
+  if (clave === 'hablando') {
+    reproducirAvatar('hablando');
+  } else if (orbe.classList.contains('orbe--abierto')) {
+    reproducirAvatar('espera');
+  }
 }
 
 function aviso(texto) {
@@ -61,10 +115,15 @@ $('aviso').onclick = () => aviso('');
 
 function abrir(v) {
   orbe.classList.toggle('orbe--abierto', v);
+  if (MODO === 'avatar') {
+    secuenciaInicial = !v;
+    reproducirAvatar(v ? 'espera' : 'saludo', !v ? false : true);
+  }
   parent.postMessage({ tipo: 'qh-widget-tamano', abierto: v }, '*');
 }
 
 $('esfera').onclick = () => abrir(!orbe.classList.contains('orbe--abierto'));
+$('invitacion').onclick = () => abrir(true);
 
 // ---------- motores (los tres planes) ----------
 

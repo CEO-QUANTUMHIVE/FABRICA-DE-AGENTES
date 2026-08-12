@@ -12,6 +12,14 @@
         <div class="orbe__cabecera">
           <button id="esfera" class="orbe__esfera" title="Tocame y te atiendo" aria-label="Abrir el asistente">
             <img id="logo" class="orbe__logo" src="./quantumhive-logo.png" alt="QuantumHive" draggable="false" />
+            <video
+              id="avatar"
+              class="orbe__avatar"
+              muted
+              playsinline
+              preload="auto"
+              aria-label="Avatar de QuantumHive"
+            ></video>
             <!-- El halo: respira, irradia energia y tira chispas. Portado de
                  QUANTUM-ASISTENTE-, donde solo aparecia mirando la pantalla;
                  aca esta siempre, es lo que invita a tocar el orbe. -->
@@ -33,7 +41,7 @@
             </span>
           </button>
 
-          <span class="orbe__invitacion">Tocame y te atiendo</span>
+          <button type="button" id="invitacion" class="orbe__invitacion">Tocame y te atiendo</button>
           <span class="orbe__titulo">Quantum Asistente</span>
 
           <div class="orbe__acciones">
