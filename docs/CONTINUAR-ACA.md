@@ -1,7 +1,10 @@
 # Brief de continuación — Motor de Voz
 
 **Fecha:** 2026-08-09
-**Rama:** `arquitectura/spec-motor-voz` en `CEO-QUANTUMHIVE/MOTOR-DE-VOZ-`
+**Rama:** `arquitectura/spec-motor-voz` en `CEO-QUANTUMHIVE/FABRICA-DE-AGENTES`
+(se llamaba `MOTOR-DE-VOZ-` hasta el 2026-08-11; GitHub redirige el nombre
+viejo, pero el paquete de Python sigue siendo `motor_voz` a propósito —
+renombrarlo toca cada import y el deploy, y no devuelve nada)
 **Estado:** el motor habla y está desplegado. Falta conectar las últimas piezas.
 
 Para el agente que siga: leé `AGENTS.md` primero, y **consultá el grafo antes

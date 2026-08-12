@@ -1,4 +1,13 @@
-# Reglas de este repo
+# Reglas de la Fábrica de Agentes
+
+**Este repo no es el motor de voz.** Trae una copia adentro, pero lo que lo
+define es la parte multi-negocio: quién es cada agente, qué sabe, con qué voz
+habla y qué puede hacer. El motor aislado está en
+[`SOLO-MOTOR-DE-VOZ-`](https://github.com/CEO-QUANTUMHIVE/SOLO-MOTOR-DE-VOZ-).
+
+El paquete de Python se sigue llamando `motor_voz` por herencia: renombrarlo
+toca cada import y el deploy de la VM, y no devuelve nada.
+
 
 Sergio paga por tokens y el plan semanal se le va en dos días. Estas
 reglas existen para eso: no son estilo, son plata.
