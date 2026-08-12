@@ -22,7 +22,10 @@
   var clonar = actual.getAttribute('data-clonar') || '';
   // La conversacion es siempre la misma. Esto solo elige su presencia
   // visual: el orbe original o un avatar de video configurado por tenant.
-  var modo = actual.getAttribute('data-modo') === 'avatar' ? 'avatar' : 'orbe';
+  var modoPedido = actual.getAttribute('data-modo');
+  var modo = modoPedido
+    ? modoPedido === 'avatar' ? 'avatar' : 'orbe'
+    : tenant === 'quantumhive' ? 'avatar' : 'orbe';
   var avatarBase = actual.getAttribute('data-avatar-base') || '';
 
   var params = new URLSearchParams({ api: origen, tenant: tenant });
