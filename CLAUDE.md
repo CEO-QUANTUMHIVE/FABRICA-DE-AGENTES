@@ -24,31 +24,76 @@ tu producto.
 **No adaptes este repo a tu producto.** Acá el motor atiende agentes
 infinitos; el tuyo atiende uno. Son cosas distintas que comparten motor.
 
+### Cómo se agrega un producto nuevo al motor — SÍ SE PUEDE
+
+**No se comparte el `.env`. Cada producto corre su propio worker.**
+
+Ese `.env` no es "la configuración del motor": es la del **worker de la
+landing**. Agregarle `LIVEKIT_AGENT_NAME` no agrega un producto, cambia lo que
+hace el worker que está atendiendo clientes ahora mismo.
+
+Lo que se comparte es el **servidor de LiveKit**, no el archivo:
+
+```
+                voz.quantumhive.com.ar   (un solo LiveKit)
+                 ↑             ↑              ↑
+      worker landing   worker Quantum As.   worker Dominus
+      .env propio      .env propio          .env propio
+      sin AGENT_NAME   AGENT_NAME=...       AGENT_NAME=...
+```
+
+Un worker **con** `LIVEKIT_AGENT_NAME` solo atiende las salas que lo nombran.
+Un worker **sin** nombre atiende las demás — ese es el de la landing, y por eso
+no se le pone nombre nunca.
+
+**La receta, sin tocar nada de lo que ya anda:**
+
+1. Cloná `SOLO-MOTOR-DE-VOZ-` en el repo de tu producto y adaptalo.
+2. Carpeta nueva en la VM (o en otra máquina), con **su propio `.env`**.
+   Copiá las claves que necesites del `.env.example`, no del `.env` vivo.
+3. `LIVEKIT_AGENT_NAME=tu-producto` en **ese** `.env`, nunca en el de la
+   landing.
+4. Servicio de systemd nuevo, con nombre propio. No toques
+   `motor-voz-api` ni `motor-voz-agente`.
+5. Tu producto pide el token nombrando a tu agente. Si tu worker corre el
+   `api.py` del repo aislado, la clave del producto ya hace eso sola.
+
+Pueden convivir varios en la misma VM sin pisarse. **Lo único que no se toca
+es lo que ya está corriendo.**
+
 ### Prohibido, sin excepciones
 
-- **Tocar el `.env` de la VM.** Ni para probar, ni "un segundo", ni con
-  backup. Un `MOTOR=openai` para probar Azure deja a todos los clientes en el
-  motor equivocado. Un `LIVEKIT_AGENT_NAME` hace que el worker **deje de
-  atender toda sala que no lo nombre**: la landing entera se queda muda.
-- **Reiniciar los servicios** (`motor-voz-api`, `motor-voz-agente`) para
-  probar algo.
+- **Editar `/home/sergio/motor-voz/.env`.** Ni agregando, ni "un segundo", ni
+  con backup. Agregar también rompe: `LIVEKIT_AGENT_NAME` deja al worker de la
+  landing atendiendo solo salas que lo nombren, o sea ninguna.
+- **Reiniciar `motor-voz-api` o `motor-voz-agente`** para probar algo.
 - **Matar procesos** en la VM.
 - **Levantar procesos a mano** al lado de los de systemd. Se pelean por el
   puerto 8080.
 
-Pasó el 2026-08-11: un agente cambió tres líneas del `.env` de la VM para
-probar Azure. No explotó de casualidad, porque los procesos ya estaban
-corriendo y el `.env` solo se lee al arrancar. El primer reinicio hubiera
-dejado la landing sin agente.
+Pasó el 2026-08-11: un agente cambió tres líneas de ese `.env` para probar
+Azure. No explotó de casualidad, porque los procesos ya estaban corriendo y el
+`.env` solo se lee al arrancar. El primer reinicio hubiera dejado la landing
+sin agente.
 
-### Lo que sí se puede
+### Lo que sí se puede, siempre
 
-Leer todo. Correr los tests, que no llaman a ninguna API. Escribir código y
-tests en el repo, commitear y pushear.
+Leer todo. Correr los tests, que no llaman a ninguna API ni gastan un peso.
+Escribir código y tests, commitear y pushear. Crear tu propio worker con tu
+propio `.env`, como dice la receta de arriba.
 
 **Desplegar es otra cosa:** se hace siguiendo
 [`docs/procesos/desplegar.md`](docs/procesos/desplegar.md), con sus dos reglas
 duras, y no improvisando en la VM.
+
+### Y una que aprendimos rompiéndola nosotros
+
+**Un `voice_id` que no existe no da error: da silencio.** El agente contesta,
+el LLM factura, y no se escucha nada. Si tocás voces, corré:
+
+```bash
+uv run pytest -m smoke tests/smoke/test_voces_existen.py
+```
 
 ---
 
