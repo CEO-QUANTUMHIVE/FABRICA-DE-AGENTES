@@ -14,6 +14,9 @@ reglas existen para eso: no son estilo, son plata.
 
 ---
 
+> **¿Recién llegás? Empezá por [`docs/MAPA.md`](docs/MAPA.md).** Está el mapa
+> de cómo encaja todo, qué existe y qué falta, y en qué orden. Cinco minutos.
+
 ## 0. ESTO ESTÁ EN PRODUCCIÓN. NO SE TOCA PARA PROBAR NADA
 
 Este repo y su VM atienden clientes reales, ahora mismo. Cientos de sesiones
