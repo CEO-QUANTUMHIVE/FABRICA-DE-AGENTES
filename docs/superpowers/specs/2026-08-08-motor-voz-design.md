@@ -140,15 +140,25 @@ El LLM **nunca** elige el tenant. El navegador **nunca** es fuente de verdad del
 
 ## 6. Dos registries de tools separados
 
-El agente receptor de QuantumHive puede crear negocios, escribir el expediente y disparar la Web Factory. Los agentes de demo atienden público anónimo.
+> **Corregido el 2026-08-15.** Este apartado decía que el agente receptor
+> podía `crear_negocio`, `guardar_expediente` y `disparar_web_factory`. **Eso
+> quedó sin efecto por la regla del 2026-08-11: nadie crea negocios ni agentes
+> hablando** —ni el visitante ni el dueño en su modo interno—. Dar de alta es
+> una operación de la fábrica detrás de login. Se corrige acá porque el texto
+> viejo describía un agujero, y alguien podía leerlo e implementarlo.
+> `TestNadieCreaNegociosHablando` se rompe si vuelve a aparecer una tool que
+> cree: no se arregla el test, se discute.
+
+Lo que decide qué registry toca es el **modo de la sesión**, no el vertical del
+negocio. El interno es un superconjunto del público: el dueño también atiende.
 
 ```text
 registry_publico    get_services, get_business_info,
                     capture_lead, transfer_to_human
 
-registry_receptor   registry_publico
-                    + crear_negocio, guardar_expediente,
-                      disparar_web_factory
+registry_interno    registry_publico
+                    + get_mis_leads, get_mis_metricas,
+                      get_mis_conversaciones
 ```
 
 Un tenant con perfil público **no puede** resolver una tool del registry del receptor, aunque el modelo la invente o alguien la inyecte por prompt. La verificación es en el resolver de tools, no en el prompt.

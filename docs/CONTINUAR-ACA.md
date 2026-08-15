@@ -526,25 +526,34 @@ Plan: [`2026-08-15-canal-whatsapp.md`](superpowers/plans/2026-08-15-canal-whatsa
 | 2 · Firma `X-Hub-Signature-256` | ✅ `channels/whatsapp/firma.py` |
 | 3 · Endpoints `GET`/`POST /webhooks/whatsapp` | ✅ en `api/servidor.py` |
 | 4 · Cerebro de texto | ✅ `brain/conversacion.py` |
-| 5 · Procesador de inbox | 🟡 lógica lista y testeada **con dobles** |
-| 6 · Envío por la Cloud API | ❌ |
+| 5 · Procesador de inbox | ✅ `channels/procesador.py`, cableado al repositorio |
+| 6 · Envío por la Cloud API | ✅ `channels/whatsapp/cliente.py` + `channels/enviador.py` |
+| — · Worker de las dos colas | ✅ `channels/worker.py` |
 | 7 · Handoff a humano · 7bis · Embedded Signup | ❌ |
 | 8 · Límites y kill-switch | ❌ |
 
-**Lo que falta para que un "hola" tenga respuesta**, en orden:
+**Del lado del código el circuito cierra**: entra el webhook, contesta el
+agente, sale por WhatsApp. Lo que falta para que un "hola" real tenga
+respuesta ya no es código nuestro:
 
-1. **Aplicar la migración `20260815193000_procesador_inbox_outbox.sql`.** Está
-   escrita y commiteada, **no aplicada** — mismo bloqueo de §6: el MCP de
-   Supabase no ve este proyecto y el CLI pide la contraseña de forma
-   interactiva.
-2. **Las funciones del repositorio que el procesador consume.** Hoy
-   `Dependencias` se llena con dobles en los tests; del lado real no existen
-   `tomar_eventos_inbox`, `cerrar_evento_inbox`, `contexto_de_conversacion`,
-   `encolar_respuesta` ni el tenant por id. **El procesador no está cableado a
-   nada.**
-3. Task 6: el cliente de la Cloud API que vacía el outbox.
-4. El worker en sí: un bucle y su servicio de systemd.
-5. Credenciales de Meta y deploy — el webhook tiene que ser HTTPS público.
+1. **Aplicar las dos migraciones del procesador** —
+   `20260815193000_procesador_inbox_outbox.sql` y
+   `20260815214500_procesador_outbox.sql`. Escritas y commiteadas, **no
+   aplicadas**: mismo bloqueo de §6, el MCP de Supabase no ve este proyecto y
+   el CLI pide la contraseña de forma interactiva.
+2. **Credenciales de Meta**, y una fila en `tenant_canales` con el
+   `phone_number_id` como `cuenta_externa_id` y un `secreto_ref`.
+3. **El token en el `.env` del worker**, como `SECRETO_<REF>` — ver
+   `channels/secretos.py`. En la base va la referencia, nunca el token.
+4. **Deploy**: el webhook tiene que ser HTTPS público, y el worker necesita su
+   propio servicio de systemd (`python -m motor_voz.channels.worker`).
+
+**Estado en Meta al 2026-08-15:** portfolio comercial `QuantumHive` creado
+(`business_id 1079094061364956`, sin duplicados, **no verificado**). La app
+`quantumhive` quedó **sin confirmar**: se completó el asistente pero Facebook
+tiró un checkpoint de "confirmá que sos una persona real" al automatizar el
+navegador. **No manejar la cuenta de Meta por automatización** — Meta lo
+detecta, y esa cuenta va a pedir verificación de negocio para Tech Provider.
 
 **El cerebro de texto es la pieza que más se va a reusar.** `responder()` recibe
 el tenant como parámetro: sumar un cliente es una fila en `tenant_canales`, cero
@@ -616,10 +625,9 @@ Cada una tiene un test que la cubre. **No las repitas.**
 
 ## 6. Lo que Sergio tiene pendiente
 
-- **Actualizar el §6 del spec.** Sigue diciendo que el agente receptor puede
-  `crear_negocio`, `guardar_expediente` y `disparar_web_factory`. Tu regla del
-  2026-08-11 lo contradice y ya está implementada así, pero si alguien lee el
-  spec y lo implementa, reabre el agujero
+- ~~Actualizar el §6 del spec~~ — **hecho el 2026-08-15.** Decía que el agente
+  receptor podía `crear_negocio`; ahora describe los registries reales y deja
+  la corrección anotada, para que nadie lo lea y reabra el agujero
 - **Aplicar la migración de la Task 2** — desbloquea toda la Fase 6 en
   adelante. Dos caminos: correr `supabase link --project-ref bcexirhurfigrehfarol`
   y después `supabase db push` (el link pide la contraseña de forma
