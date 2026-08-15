@@ -506,6 +506,57 @@ Compila en producción y fue verificada visualmente en escritorio, 390×844 y
 **Siguiente:** alta del dueño real de QuantumHive + login E2E; después, chat
 interno sobre el mismo agente.
 
+**Ojo con el estado real del usuario dueño** (verificado el 2026-08-15 contra la
+base): `ceo@quantumhive.com.ar` **ya existe** y ya está en `tenant_usuarios`
+como dueño de QuantumHive. Pero se creó vacío: `identities: []`, o sea **sin
+contraseña**, y con el email sin confirmar contra un proyecto que tiene
+`mailer_autoconfirm: false`. Así no se puede entrar. Se arregla borrándolo y
+recreándolo desde el dashboard con contraseña y **Auto Confirm User** tildado, y
+volviendo a vincular el UUID nuevo — al borrarlo, la fila de `tenant_usuarios`
+se va en cascada.
+
+### 3.13 Canal WhatsApp 🟡 CUATRO TASKS HECHAS, EL CIRCUITO NO CIERRA (2026-08-15)
+
+Plan: [`2026-08-15-canal-whatsapp.md`](superpowers/plans/2026-08-15-canal-whatsapp.md).
+**345 tests en verde.**
+
+| Task | Estado |
+|---|---|
+| 1 · Parser del webhook de Meta | ✅ `channels/whatsapp/payload.py` |
+| 2 · Firma `X-Hub-Signature-256` | ✅ `channels/whatsapp/firma.py` |
+| 3 · Endpoints `GET`/`POST /webhooks/whatsapp` | ✅ en `api/servidor.py` |
+| 4 · Cerebro de texto | ✅ `brain/conversacion.py` |
+| 5 · Procesador de inbox | 🟡 lógica lista y testeada **con dobles** |
+| 6 · Envío por la Cloud API | ❌ |
+| 7 · Handoff a humano · 7bis · Embedded Signup | ❌ |
+| 8 · Límites y kill-switch | ❌ |
+
+**Lo que falta para que un "hola" tenga respuesta**, en orden:
+
+1. **Aplicar la migración `20260815193000_procesador_inbox_outbox.sql`.** Está
+   escrita y commiteada, **no aplicada** — mismo bloqueo de §6: el MCP de
+   Supabase no ve este proyecto y el CLI pide la contraseña de forma
+   interactiva.
+2. **Las funciones del repositorio que el procesador consume.** Hoy
+   `Dependencias` se llena con dobles en los tests; del lado real no existen
+   `tomar_eventos_inbox`, `cerrar_evento_inbox`, `contexto_de_conversacion`,
+   `encolar_respuesta` ni el tenant por id. **El procesador no está cableado a
+   nada.**
+3. Task 6: el cliente de la Cloud API que vacía el outbox.
+4. El worker en sí: un bucle y su servicio de systemd.
+5. Credenciales de Meta y deploy — el webhook tiene que ser HTTPS público.
+
+**El cerebro de texto es la pieza que más se va a reusar.** `responder()` recibe
+el tenant como parámetro: sumar un cliente es una fila en `tenant_canales`, cero
+líneas de código. Instagram y Facebook cambian parser y cliente de envío, no el
+cerebro.
+
+**Y la corrección que costó una vuelta:** *ningún negocio cambia su número.* Hay
+dos onboardings. El directo saca el número de la app de WhatsApp Business y
+pierde su historial. **Coexistence** lo deja en los dos lados sincronizado —
+pero exige ser **Tech Provider de Meta** y **Embedded Signup con session
+logging**. Para clientes va coexistence, sí o sí. Está desarrollado en el plan.
+
 ---
 
 ## 4. Decisiones tomadas — no reabrir sin motivo
@@ -583,6 +634,16 @@ Cada una tiene un test que la cubre. **No las repitas.**
   `[Environment]::SetEnvironmentVariable('AZURE_OPENAI_API_KEY', $null, 'User')`
   y se reinicia la terminal
 - **Rotar la contraseña de Supabase** — quedó expuesta en el chat
+- **Empezar el alta de QuantumHive como Tech Provider de Meta.** Es lo más
+  lento de todo lo pendiente y es lo único que habilita coexistence, o sea que
+  un cliente conserve su número **y** su app de WhatsApp Business. Sin esto,
+  Jaz no se puede conectar sin perder su app. No bloquea el desarrollo del
+  canal, así que conviene que corra en paralelo desde ya
+- **Recrear el usuario `ceo@quantumhive.com.ar`** con contraseña y Auto Confirm
+  User, y pasar el UUID nuevo para revincularlo (ver §3.12)
+- **Elegir proveedor de SMTP** para los mails de invitación del panel. El de
+  Supabase por defecto solo le escribe a miembros del equipo y manda 2 por hora:
+  no sirve ni para la primera clienta
 - **Elegir un `voice_id` real de Fish para `demo_capilar`**, para poder
   validar a oído que cada tenant habla con su propia voz (gate de la Fase 8)
 - **Ajustar a oído la sensibilidad del micrófono** si todavía corta rápido
