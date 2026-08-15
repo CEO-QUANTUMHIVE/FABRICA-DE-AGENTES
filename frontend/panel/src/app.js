@@ -202,15 +202,35 @@ async function signIn(event) {
   }
   const data = new FormData(event.currentTarget);
   message.textContent = "Validando…";
-  const { data: auth, error } = await supabase.auth.signInWithPassword({
-    email: data.get("email"), password: data.get("password"),
-  });
-  if (error) {
-    message.textContent = "No pudimos ingresar. Revisá el correo y la contraseña.";
+
+  let auth;
+  try {
+    const respuesta = await supabase.auth.signInWithPassword({
+      email: data.get("email"), password: data.get("password"),
+    });
+    if (respuesta.error) throw respuesta.error;
+    auth = respuesta.data;
+  } catch (error) {
+    // El motivo real, no "revisá el correo y la contraseña". Un email sin
+    // confirmar da ese mismo cartel y te manda a probar claves durante media
+    // hora buscando un problema que no existe.
+    message.textContent = `No pudimos ingresar: ${error?.message || "error desconocido"}`;
     return;
   }
+
   state.session = auth.session;
-  await loadTenants();
+  try {
+    await loadTenants();
+  } catch (error) {
+    // Sin esto, cualquier falla al cargar los negocios deja el cartel en
+    // "Validando…" para siempre y no hay forma de saber que paso. Pasó en
+    // producción con la API apuntada a un host que no existía.
+    state.session = null;
+    message.textContent =
+      `Entraste, pero no pudimos cargar tus negocios: ${error?.message || "error de red"}. ` +
+      `API: ${API_URL}`;
+    return;
+  }
   renderShell();
 }
 

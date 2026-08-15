@@ -7,6 +7,9 @@ apis/
 .env
 .env.*
 !.env.example
+# Solo URLs publicas, ninguna clave. Versionado para que un build de
+# produccion no dependa de lo que tenga alguien en su shell.
+!frontend/panel/.env.production
 secrets/
 credentials/
 *api*.txt
