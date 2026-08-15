@@ -99,6 +99,18 @@ class ContextoConversacion:
 
 
 @dataclass(frozen=True)
+class Permiso:
+    """Si el agente puede contestar, y por que no si no puede.
+
+    El motivo se guarda y se muestra: "no contesto" sin explicacion es lo que
+    hace que alguien desactive el limite en vez de entenderlo.
+    """
+
+    permitido: bool
+    motivo: str = ""
+
+
+@dataclass(frozen=True)
 class EventoOutbox:
     """Una respuesta lista para mandar al proveedor."""
 

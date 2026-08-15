@@ -27,6 +27,7 @@ from motor_voz.brain.mensajes import (
     EventoOutbox,
     MensajeEntrante,
     MensajeGuardado,
+    Permiso,
     ResultadoIngreso,
     Turno,
 )
@@ -367,6 +368,26 @@ async def encolar_respuesta(
         .execute()
     )
     return bool(respuesta.data)
+
+
+async def puede_responder(
+    config: Config, *, tenant_id: str, conversacion_id: str
+) -> Permiso:
+    """Kill-switch y topes de gasto de ese negocio.
+
+    Se consulta ANTES de llamar al LLM: el punto es no pagarlo, no descartar
+    la respuesta despues de haberla generado.
+    """
+    cliente = await _cliente(config)
+    respuesta = await cliente.rpc(
+        "puede_responder",
+        {"p_tenant_id": tenant_id, "p_conversacion_id": conversacion_id},
+    ).execute()
+    datos = respuesta.data or {}
+    return Permiso(
+        permitido=bool(datos.get("permitido")),
+        motivo=str(datos.get("motivo") or ""),
+    )
 
 
 async def tomar_eventos_outbox(

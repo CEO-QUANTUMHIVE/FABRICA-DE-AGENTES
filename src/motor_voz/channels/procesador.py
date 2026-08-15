@@ -26,7 +26,12 @@ from dataclasses import dataclass
 from typing import Any, Awaitable, Callable
 
 from motor_voz.brain import conversacion
-from motor_voz.brain.mensajes import ContextoConversacion, EventoInbox, Turno
+from motor_voz.brain.mensajes import (
+    ContextoConversacion,
+    EventoInbox,
+    Permiso,
+    Turno,
+)
 from motor_voz.brain.tenants import repositorio
 from motor_voz.config import Config
 
@@ -63,6 +68,7 @@ class Dependencias:
     tenant_de_id: Callable[..., Awaitable[Any]]
     contexto_de: Callable[..., Awaitable[ContextoConversacion]]
     encolar: Callable[..., Awaitable[bool]]
+    puede_responder: Callable[..., Awaitable[Permiso]] = repositorio.puede_responder
     responder: Callable[..., Awaitable[str]] = conversacion.responder
 
     @classmethod
@@ -129,10 +135,29 @@ async def _atender(config: Config, deps: Dependencias, evento: EventoInbox) -> b
         # El ultimo movimiento fue nuestro. Nada que contestar.
         return False
 
+    # El boton rojo global, antes que cualquier consulta. Es para el momento
+    # en que algo se desmadra y no hay tiempo de averiguar de quien es.
+    if not config.respuestas_automaticas:
+        logger.warning("procesador | respuestas automaticas apagadas por entorno")
+        return False
+
     ultimo = contexto.turnos[-1]
     if not ultimo.texto.strip():
         texto = SOLO_LEO_TEXTO
     else:
+        # Antes del LLM, no despues: el punto de un tope de gasto es no
+        # pagarlo, no descartar la respuesta cuando ya se pago.
+        permiso = await deps.puede_responder(
+            config, tenant_id=evento.tenant_id, conversacion_id=evento.conversacion_id
+        )
+        if not permiso.permitido:
+            logger.warning(
+                "procesador | no se contesta | tenant=%s | %s",
+                evento.tenant_id,
+                permiso.motivo,
+            )
+            return False
+
         tenant = await deps.tenant_de_id(config, evento.tenant_id)
         texto = await deps.responder(
             config,

@@ -93,6 +93,10 @@ class Config:
     meta_app_secret: str = ""
     whatsapp_verify_token: str = ""
     whatsapp_api_version: str = "v21.0"
+    # El boton rojo. Corta las respuestas automaticas de TODOS los tenants sin
+    # tocar la base ni desconectar canales. Existe para el momento en que algo
+    # se desmadra y no hay tiempo de averiguar de quien es.
+    respuestas_automaticas: bool = True
 
 
 def cargar(entorno: dict[str, str] | None = None) -> Config:
@@ -162,4 +166,11 @@ def cargar(entorno: dict[str, str] | None = None) -> Config:
         whatsapp_verify_token=e.get("WHATSAPP_VERIFY_TOKEN", "").strip(),
         # Fijada explicita. "la ultima" cambia sola y rompe sin aviso.
         whatsapp_api_version=e.get("WHATSAPP_API_VERSION", "v21.0").strip(),
+        # Se lista lo que APAGA, no lo que enciende: asi un valor mal escrito
+        # deja el agente andando en vez de silenciarlo sin que nadie lo note.
+        # Apagarlo tiene que ser deliberado; que siga andando es el default.
+        respuestas_automaticas=(
+            e.get("RESPUESTAS_AUTOMATICAS", "on").strip().lower()
+            not in {"off", "no", "false", "0"}
+        ),
     )

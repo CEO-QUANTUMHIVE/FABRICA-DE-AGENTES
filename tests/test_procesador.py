@@ -12,8 +12,23 @@ import pytest
 from motor_voz import config as config_mod
 from motor_voz.brain import conversacion as conversacion_mod
 from motor_voz.brain.conversacion import Turno
+from motor_voz.brain.mensajes import Permiso
 from motor_voz.brain.tenants.modelos import PerfilTenant, Servicio, Tenant
 from motor_voz.channels import procesador
+
+
+def _entorno(**cambios) -> dict:
+    base = {
+        "GROQ_API_KEY": "x",
+        "FISH_API_KEY": "x",
+        "LIVEKIT_URL": "wss://ejemplo",
+        "LIVEKIT_API_KEY": "x",
+        "LIVEKIT_API_SECRET": "x",
+        "SUPABASE_URL": "https://ejemplo.supabase.co",
+        "SUPABASE_SERVICE_ROLE_KEY": "x",
+    }
+    base.update(cambios)
+    return base
 
 
 def _tenant() -> Tenant:
@@ -82,6 +97,12 @@ class _Repo:
         return self.respuesta
 
 
+async def _permite(config, *, tenant_id, conversacion_id):
+    """El default de `Dependencias` es el repositorio real, que iria a
+    Supabase. Los tests que no prueban limites usan este."""
+    return Permiso(permitido=True)
+
+
 def _deps(repo: _Repo) -> procesador.Dependencias:
     return procesador.Dependencias(
         tomar=repo.tomar,
@@ -89,23 +110,19 @@ def _deps(repo: _Repo) -> procesador.Dependencias:
         tenant_de_id=repo.tenant_de_id,
         contexto_de=repo.contexto_de,
         encolar=repo.encolar,
+        puede_responder=_permite,
         responder=repo.responder,
     )
 
 
 @pytest.fixture
 def config():
-    return config_mod.cargar(
-        {
-            "GROQ_API_KEY": "x",
-            "FISH_API_KEY": "x",
-            "LIVEKIT_URL": "wss://ejemplo",
-            "LIVEKIT_API_KEY": "x",
-            "LIVEKIT_API_SECRET": "x",
-            "SUPABASE_URL": "https://ejemplo.supabase.co",
-            "SUPABASE_SERVICE_ROLE_KEY": "x",
-        }
-    )
+    return config_mod.cargar(_entorno())
+
+
+@pytest.fixture
+def config_apagado():
+    return config_mod.cargar(_entorno(RESPUESTAS_AUTOMATICAS="off"))
 
 
 async def test_un_mensaje_pendiente_termina_encolado_como_respuesta(config):
@@ -262,3 +279,97 @@ async def test_sin_nada_pendiente_no_hace_nada(config):
 
     assert await procesador.procesar_pendientes(config, _deps(repo)) == 0
     assert repo.cerrados == []
+
+
+# --- limites de gasto y kill-switch -------------------------------------
+
+
+async def test_el_tope_se_consulta_antes_de_pagar_el_llm(config):
+    """El punto de un tope de gasto es no pagarlo, no descartar la respuesta
+    cuando el LLM ya se cobro."""
+    repo = _Repo(eventos=[_evento()])
+    orden = []
+
+    async def permiso(config, *, tenant_id, conversacion_id):
+        orden.append("permiso")
+        return Permiso(permitido=True)
+
+    async def responder(config, tenant, **kwargs):
+        orden.append("llm")
+        return "hola"
+
+    deps = procesador.Dependencias(
+        **{**_deps(repo).__dict__, "puede_responder": permiso, "responder": responder}
+    )
+
+    await procesador.procesar_pendientes(config, deps)
+
+    assert orden == ["permiso", "llm"]
+
+
+async def test_con_el_tope_alcanzado_no_se_llama_al_modelo(config):
+    repo = _Repo(eventos=[_evento()])
+
+    async def permiso(config, *, tenant_id, conversacion_id):
+        return Permiso(permitido=False, motivo="tope diario alcanzado (200)")
+
+    deps = procesador.Dependencias(
+        **{**_deps(repo).__dict__, "puede_responder": permiso}
+    )
+
+    await procesador.procesar_pendientes(config, deps)
+
+    assert repo.pedidos_al_cerebro == []
+    assert repo.encolados == []
+    # Se cierra bien: reintentarlo maniana tampoco corresponde, el mensaje ya
+    # quedo guardado en la conversacion para que alguien lo lea.
+    assert repo.cerrados == [("ev-1", True, "")]
+
+
+async def test_el_boton_rojo_global_corta_todo(config_apagado):
+    """Sin tocar la base ni desconectar canales: los mensajes siguen
+    entrando y quedan en la conversacion."""
+    repo = _Repo(eventos=[_evento()])
+
+    await procesador.procesar_pendientes(config_apagado, _deps(repo))
+
+    assert repo.pedidos_al_cerebro == []
+    assert repo.encolados == []
+
+
+async def test_el_boton_rojo_no_se_apaga_con_un_valor_raro():
+    """Se lista lo que APAGA. Un valor mal escrito deja el agente andando en
+    vez de silenciarlo sin que nadie lo note."""
+    for valor in ("on", "si", "", "OFFF", "cualquier cosa"):
+        assert config_mod.cargar(_entorno(RESPUESTAS_AUTOMATICAS=valor)).respuestas_automaticas
+
+    for valor in ("off", "OFF", "no", "false", "0"):
+        assert not config_mod.cargar(
+            _entorno(RESPUESTAS_AUTOMATICAS=valor)
+        ).respuestas_automaticas
+
+
+async def test_un_audio_no_consume_tope(config):
+    """Avisar que solo leemos texto no paga un LLM ni deberia gastar cupo."""
+    repo = _Repo(eventos=[_evento()], turnos=(Turno("user", "  "),))
+    consultas = []
+
+    async def permiso(config, *, tenant_id, conversacion_id):
+        consultas.append(1)
+        return Permiso(permitido=True)
+
+    deps = procesador.Dependencias(
+        **{**_deps(repo).__dict__, "puede_responder": permiso}
+    )
+
+    await procesador.procesar_pendientes(config, deps)
+
+    assert consultas == []
+    assert repo.encolados[0]["payload"]["texto"] == procesador.SOLO_LEO_TEXTO
+
+
+def test_el_limite_real_apunta_al_repositorio():
+    from motor_voz.brain.tenants import repositorio
+
+    deps = procesador.Dependencias.de_produccion()
+    assert deps.puede_responder is repositorio.puede_responder
