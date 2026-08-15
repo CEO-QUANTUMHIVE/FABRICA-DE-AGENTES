@@ -1,0 +1,19 @@
+{
+  "name": "QuantumHive — Mi agente",
+  "short_name": "Mi agente",
+  "description": "Panel de control del agente de tu negocio",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#090d18",
+  "theme_color": "#090d18",
+  "lang": "es",
+  "icons": [
+    {
+      "src": "./icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
