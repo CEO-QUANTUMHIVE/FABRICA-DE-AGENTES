@@ -86,6 +86,13 @@ class Config:
     # widget. Fuera de produccion se puede pedir por el cuerpo, que es como se
     # prueba el aislamiento a oido en local.
     entorno: str
+    # Comunes a la app de Meta, no a un numero. El access token de cada numero
+    # NO vive aca: va al almacen de secretos y `tenant_canales` guarda solo la
+    # referencia. Con default para que un despliegue viejo no deje de arrancar
+    # por no tenerlos; el webhook falla cerrado si estan vacios.
+    meta_app_secret: str = ""
+    whatsapp_verify_token: str = ""
+    whatsapp_api_version: str = "v21.0"
 
 
 def cargar(entorno: dict[str, str] | None = None) -> Config:
@@ -151,4 +158,8 @@ def cargar(entorno: dict[str, str] | None = None) -> Config:
         supabase_service_role_key=(
             e.get("SUPABASE_SERVICE_ROLE_KEY") or e.get("SUPABASE_SECRET_KEY") or ""
         ).strip(),
+        meta_app_secret=e.get("META_APP_SECRET", "").strip(),
+        whatsapp_verify_token=e.get("WHATSAPP_VERIFY_TOKEN", "").strip(),
+        # Fijada explicita. "la ultima" cambia sola y rompe sin aviso.
+        whatsapp_api_version=e.get("WHATSAPP_API_VERSION", "v21.0").strip(),
     )

@@ -26,8 +26,11 @@ from livekit import api
 
 from motor_voz.api import niveles as catalogo_niveles
 from motor_voz.api.limites import LimiteAlcanzado, Limitador
+from motor_voz.brain.mensajes import CanalTenant, ResultadoIngreso
 from motor_voz.brain.tenants import repositorio
 from motor_voz.brain.tenants.modelos import Tenant
+from motor_voz.channels.whatsapp import firma as firma_whatsapp
+from motor_voz.channels.whatsapp import payload as payload_whatsapp
 from motor_voz.brain.tenants.resolver import TENANT_POR_DEFECTO
 from motor_voz.config import Config, ConfigInvalida, cargar
 from motor_voz.voice.motores import catalogo_de_voces, ruta_de_muestra
@@ -44,6 +47,8 @@ RolDeUsuarioEnTenant = Callable[[Config, str, str], Awaitable[str | None]]
 TenantsDeUsuario = Callable[[Config, str], Awaitable[list[dict]]]
 ConocimientoParaPanel = Callable[[Config, str], Awaitable[list[dict]]]
 OperacionPanel = Callable[..., Awaitable[dict]]
+CanalDeCuenta = Callable[..., Awaitable[CanalTenant]]
+RegistrarMensajeEntrante = Callable[..., Awaitable[ResultadoIngreso]]
 
 CATEGORIAS_CONOCIMIENTO = frozenset(
     {"horario", "precio", "servicio", "politica", "faq", "tono", "otro"}
@@ -436,6 +441,83 @@ async def preflight(peticion: web.Request) -> web.Response:
     return _cors(web.Response(status=204))
 
 
+async def verificar_webhook_whatsapp(pedido: web.Request) -> web.Response:
+    """El GET que Meta hace una sola vez al dar de alta el webhook.
+
+    Devuelve `hub.challenge` en texto plano si el token coincide. La
+    comparacion es en tiempo constante y un token vacio no valida nunca: si
+    `WHATSAPP_VERIFY_TOKEN` no esta configurado, un pedido con el parametro
+    vacio se daria por bueno.
+    """
+    cfg: Config = pedido.app["config"]
+    esperado = cfg.whatsapp_verify_token
+    recibido = pedido.query.get("hub.verify_token", "")
+
+    if not esperado or not secrets.compare_digest(recibido, esperado):
+        logger.warning("whatsapp | verificacion rechazada")
+        raise web.HTTPForbidden(text="verificacion rechazada")
+
+    return web.Response(text=pedido.query.get("hub.challenge", ""))
+
+
+async def recibir_webhook_whatsapp(pedido: web.Request) -> web.Response:
+    """Valida la firma, resuelve el tenant por la cuenta receptora y persiste.
+
+    Responde 200 apenas guarda. La respuesta del agente no se genera aca: si
+    tardara, Meta reintentaria el mismo evento. El trabajo real queda en
+    `eventos_inbox` y lo levanta el procesador.
+
+    El unico 500 es cuando el mensaje es valido y lo perdimos por un problema
+    nuestro: ahi el reintento de Meta es lo que queremos. Un payload que no
+    entendemos o una cuenta que no es de nadie devuelven 200, porque un error
+    haria que Meta lo reintente para siempre.
+    """
+    cfg: Config = pedido.app["config"]
+    crudo = await pedido.read()
+
+    if not firma_whatsapp.firma_valida(
+        crudo, pedido.headers.get("X-Hub-Signature-256"), cfg.meta_app_secret
+    ):
+        logger.warning("whatsapp | firma invalida | %s bytes", len(crudo))
+        raise web.HTTPForbidden(text="firma invalida")
+
+    try:
+        cuerpo = json.loads(crudo)
+    except ValueError:
+        logger.warning("whatsapp | cuerpo que no es json")
+        return web.json_response({"recibido": True})
+
+    canal_de_cuenta = pedido.app["canal_de_cuenta"]
+    registrar = pedido.app["registrar_mensaje_entrante"]
+
+    for entrada in payload_whatsapp.leer_webhook(cuerpo):
+        try:
+            canal = await canal_de_cuenta(
+                cfg, canal="whatsapp", cuenta_externa_id=entrada.cuenta_externa_id
+            )
+        except repositorio.CanalNoEncontrado:
+            # Un numero que no es de ningun tenant. No es un error nuestro y
+            # no hay a quien contestarle: se registra y se sigue.
+            logger.warning(
+                "whatsapp | cuenta sin tenant | %s", entrada.cuenta_externa_id
+            )
+            continue
+
+        for crudo_mensaje in entrada.mensajes:
+            resultado = await registrar(
+                cfg,
+                tenant_canal_id=canal.id,
+                mensaje=crudo_mensaje.con_tenant(canal.tenant_id),
+            )
+            logger.info(
+                "whatsapp | entrante | tenant=%s duplicado=%s",
+                canal.tenant_id,
+                resultado.duplicado,
+            )
+
+    return web.json_response({"recibido": True})
+
+
 def crear_app(
     config: Config | None = None,
     obtener_tenant: ObtenerTenant | None = None,
@@ -446,6 +528,8 @@ def crear_app(
     conocimiento_para_panel: ConocimientoParaPanel | None = None,
     crear_borrador_conocimiento: OperacionPanel | None = None,
     publicar_version_conocimiento: OperacionPanel | None = None,
+    canal_de_cuenta: CanalDeCuenta | None = None,
+    registrar_mensaje_entrante: RegistrarMensajeEntrante | None = None,
 ) -> web.Application:
     cfg = config or cargar()
 
@@ -479,6 +563,10 @@ def crear_app(
     app["publicar_version_conocimiento"] = (
         publicar_version_conocimiento or repositorio.publicar_version_conocimiento
     )
+    app["canal_de_cuenta"] = canal_de_cuenta or repositorio.canal_de_cuenta
+    app["registrar_mensaje_entrante"] = (
+        registrar_mensaje_entrante or repositorio.registrar_mensaje_entrante
+    )
     app["limitador"] = Limitador(
         por_ip_hora=cfg.max_sesiones_por_ip_hora,
         por_dia=cfg.max_sesiones_por_dia,
@@ -502,6 +590,10 @@ def crear_app(
                 "/api/panel/{tenant_slug}/conocimiento/{version_id}/publicar",
                 publicar_version_del_panel,
             ),
+            # Fuera de /api/ a proposito: no lo llama un navegador, no lleva
+            # CORS y no comparte los limites por IP con la demo.
+            web.get("/webhooks/whatsapp", verificar_webhook_whatsapp),
+            web.post("/webhooks/whatsapp", recibir_webhook_whatsapp),
             web.options("/api/{resto:.*}", preflight),
         ]
     )
