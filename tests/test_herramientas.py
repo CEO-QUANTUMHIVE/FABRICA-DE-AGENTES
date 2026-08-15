@@ -13,6 +13,7 @@ import pytest
 from motor_voz.brain.tenants.modelos import PerfilTenant, Servicio, Tenant
 from motor_voz.config import cargar
 from motor_voz.voice import herramientas
+from motor_voz.voice.agente import modo_de_metadata
 
 ENTORNO = {
     "GROQ_API_KEY": "gsk_falsa",
@@ -61,6 +62,17 @@ class TestQueToolsRecibeElModelo:
         """Es lo que decide si alguien ve los leads. Un typo no puede abrirlo."""
         assert _nombres(_armar(modo)) == PUBLICAS
 
+
+class TestModoFirmadoDeLaSesion:
+    def test_interno_exacto_abre_el_modo_interno(self):
+        assert modo_de_metadata('{"modo":"interno"}') == "interno"
+
+    @pytest.mark.parametrize(
+        "metadata",
+        ["", "no-es-json", "[]", "{}", '{"modo":"INTERNO"}', '{"modo":"inventado"}'],
+    )
+    def test_metadata_ausente_rota_o_rara_falla_cerrado(self, metadata):
+        assert modo_de_metadata(metadata) == "publico"
 
 class TestElModeloNoVeLoQueNoDebe:
     @pytest.mark.parametrize("modo", ["publico", "interno"])

@@ -7,6 +7,7 @@ proveedores y arranca. Todo lo que el agente sabe viene de brain/.
 from __future__ import annotations
 
 import dataclasses
+import json
 import logging
 import os
 
@@ -31,14 +32,13 @@ from motor_voz.voice.transformaciones import normalizar_para_voz
 
 logger = logging.getLogger("motor-voz")
 
-MODO_DE_LA_SESION = "publico"
-"""Con que juego de tools atiende el agente.
-
-Fijo en publico a proposito, y no leido de la sala ni del token: hoy no hay
-forma de saber QUIEN esta del otro lado, y el modo interno da acceso a los
-leads de un negocio. Cuando exista login, esto sale de la metadata firmada
-del token — nunca de algo que mande el navegador.
-"""
+def modo_de_metadata(metadata: str) -> str:
+    """Lee el modo firmado; ausente, roto o desconocido siempre es publico."""
+    try:
+        datos = json.loads(metadata or "{}")
+    except (json.JSONDecodeError, TypeError):
+        return "publico"
+    return "interno" if isinstance(datos, dict) and datos.get("modo") == "interno" else "publico"
 
 
 class Receptor(Agent):
@@ -142,20 +142,24 @@ async def entrypoint(ctx: JobContext) -> None:
     # que voz habla el agente, y quien dice ser.
     tenant = await repositorio.obtener_tenant(config, tenant_de_la_sala(ctx.room.name))
     voice_id_override = tenant.voz.voice_id if tenant.voz else ""
+    participante = await ctx.wait_for_participant()
+    modo = modo_de_metadata(participante.metadata)
 
     ctx.log_context_fields = {
         "room": ctx.room.name,
         "motor": config.motor,
         "tenant": tenant.slug,
+        "modo": modo,
     }
 
     # Se imprime la config al arrancar cada sesion: sin esto no hay forma de
     # saber a simple vista si el worker esta corriendo el codigo nuevo o
     # quedo con el viejo porque no se reinicio.
     logger.info(
-        "sesion nueva | tenant=%s plan=%s motor=%s | voz=%s speed=%s temp=%s "
+        "sesion nueva | tenant=%s modo=%s plan=%s motor=%s | voz=%s speed=%s temp=%s "
         "| voz_gemini=%s voz_openai=%s",
         tenant.slug,
+        modo,
         motores.PLANES.get(config.motor, "?"),
         config.motor,
         (voice_id_override or config.fish_voice_id)[:12] or "(default)",
@@ -211,11 +215,9 @@ async def entrypoint(ctx: JobContext) -> None:
     ctx.add_shutdown_callback(registrar_uso)
 
     prompt = construir_contexto(tenant, motor=config.motor, canal="web")
-    # El modo decide que puede HACER el agente, no solo que dice. Hoy siempre
-    # es publico: conceder el interno sin saber quien pide seria regalarle los
-    # leads de un negocio a cualquiera. Lo abre la fase de autenticacion, y va
-    # antes del panel de control.
-    tools = herramientas.para(MODO_DE_LA_SESION, tenant, config, ctx.room.name)
+    # El modo decide que puede HACER el agente, no solo que dice. Llega firmado
+    # por la API despues de validar sesion y pertenencia al tenant.
+    tools = herramientas.para(modo, tenant, config, ctx.room.name)
     await session.start(
         agent=Receptor(prompt, tools),
         room=ctx.room,

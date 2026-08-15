@@ -39,6 +39,15 @@ ORIGENES_PERMITIDOS = "*"  # la demo es publica; en produccion, el dominio propi
 # suite sigue sin depender de que Supabase este arriba.
 ObtenerTenant = Callable[[Config, str], Awaitable[Tenant]]
 TenantDeDominio = Callable[[Config, str], Awaitable[str | None]]
+UsuarioDeToken = Callable[[Config, str], Awaitable[str | None]]
+RolDeUsuarioEnTenant = Callable[[Config, str, str], Awaitable[str | None]]
+TenantsDeUsuario = Callable[[Config, str], Awaitable[list[dict]]]
+ConocimientoParaPanel = Callable[[Config, str], Awaitable[list[dict]]]
+OperacionPanel = Callable[..., Awaitable[dict]]
+
+CATEGORIAS_CONOCIMIENTO = frozenset(
+    {"horario", "precio", "servicio", "politica", "faq", "tono", "otro"}
+)
 
 # Los unicos entornos donde se puede pedir un tenant por el cuerpo. Se listan
 # los que aflojan, no los que aprietan: asi un valor escrito distinto, en otro
@@ -50,9 +59,16 @@ ENTORNOS_DE_DESARROLLO = frozenset({"development", "desarrollo", "dev", "local",
 
 def _cors(respuesta: web.StreamResponse) -> web.StreamResponse:
     respuesta.headers["Access-Control-Allow-Origin"] = ORIGENES_PERMITIDOS
-    respuesta.headers["Access-Control-Allow-Headers"] = "Content-Type"
+    respuesta.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
     respuesta.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
     return respuesta
+
+
+def _token_bearer(peticion: web.Request) -> str:
+    esquema, _, token = peticion.headers.get("Authorization", "").partition(" ")
+    if esquema.lower() != "bearer" or not token.strip():
+        return ""
+    return token.strip()
 
 
 def _ip_de(peticion: web.Request) -> str:
@@ -95,11 +111,184 @@ async def listar_voces(peticion: web.Request) -> web.Response:
     )
 
 
+async def _usuario_del_panel(peticion: web.Request) -> str | None:
+    """Valida la sesion del panel. Nunca confia en datos del cuerpo."""
+    token = _token_bearer(peticion)
+    if not token:
+        return None
+    usuario_de_token: UsuarioDeToken = peticion.app["usuario_de_token"]
+    try:
+        return await usuario_de_token(peticion.app["config"], token)
+    except Exception:
+        logger.info("sesion invalida en API del panel")
+        return None
+
+
+async def _contexto_del_panel(
+    peticion: web.Request, tenant_slug: str
+) -> tuple[str | None, Tenant | None, str | None, web.Response | None]:
+    """Exige sesion y membresia en el tenant pedido por la ruta."""
+    usuario_id = await _usuario_del_panel(peticion)
+    if not usuario_id:
+        return None, None, None, _cors(
+            web.json_response({"error": "Sesion requerida."}, status=401)
+        )
+
+    config: Config = peticion.app["config"]
+    obtener_tenant: ObtenerTenant = peticion.app["obtener_tenant"]
+    rol_de_usuario_en_tenant: RolDeUsuarioEnTenant = peticion.app[
+        "rol_de_usuario_en_tenant"
+    ]
+    try:
+        tenant = await obtener_tenant(config, tenant_slug)
+    except repositorio.TenantNoEncontrado:
+        return usuario_id, None, None, _cors(
+            web.json_response({"error": "Negocio no encontrado."}, status=404)
+        )
+    except Exception:
+        logger.exception("no se pudo resolver el tenant del panel")
+        return usuario_id, None, None, _cors(
+            web.json_response({"error": "No se pudo validar el negocio."}, status=503)
+        )
+
+    try:
+        rol = await rol_de_usuario_en_tenant(config, usuario_id, tenant.id)
+    except Exception:
+        logger.exception("no se pudo validar la membresia del panel")
+        return usuario_id, tenant, None, _cors(
+            web.json_response({"error": "No se pudo validar el acceso."}, status=503)
+        )
+    if not rol:
+        return usuario_id, tenant, None, _cors(
+            web.json_response({"error": "No tienes acceso a este negocio."}, status=403)
+        )
+    return usuario_id, tenant, rol, None
+
+
+async def listar_tenants_del_panel(peticion: web.Request) -> web.Response:
+    usuario_id = await _usuario_del_panel(peticion)
+    if not usuario_id:
+        return _cors(web.json_response({"error": "Sesion requerida."}, status=401))
+    try:
+        funcion: TenantsDeUsuario = peticion.app["tenants_de_usuario"]
+        tenants = await funcion(peticion.app["config"], usuario_id)
+    except Exception:
+        logger.exception("no se pudieron listar los negocios del panel")
+        return _cors(
+            web.json_response({"error": "No se pudieron cargar tus negocios."}, status=503)
+        )
+    return _cors(web.json_response({"tenants": tenants}))
+
+
+async def listar_conocimiento_del_panel(peticion: web.Request) -> web.Response:
+    usuario_id, tenant, rol, error = await _contexto_del_panel(
+        peticion, peticion.match_info["tenant_slug"]
+    )
+    if error is not None:
+        return error
+    try:
+        funcion: ConocimientoParaPanel = peticion.app["conocimiento_para_panel"]
+        piezas = await funcion(peticion.app["config"], tenant.id)
+    except Exception:
+        logger.exception("no se pudo cargar el conocimiento del panel")
+        return _cors(
+            web.json_response({"error": "No se pudo cargar el entrenamiento."}, status=503)
+        )
+    return _cors(
+        web.json_response(
+            {"tenant": tenant.slug, "rol": rol, "conocimiento": piezas}
+        )
+    )
+
+
+async def crear_borrador_del_panel(peticion: web.Request) -> web.Response:
+    usuario_id, tenant, _, error = await _contexto_del_panel(
+        peticion, peticion.match_info["tenant_slug"]
+    )
+    if error is not None:
+        return error
+    try:
+        cuerpo = await peticion.json()
+    except Exception:
+        return _cors(web.json_response({"error": "JSON invalido."}, status=400))
+
+    categoria = str(cuerpo.get("categoria") or "").strip()
+    clave = str(cuerpo.get("clave") or "").strip()
+    titulo = str(cuerpo.get("titulo") or "").strip()
+    contenido = cuerpo.get("contenido")
+    motivo = str(cuerpo.get("motivo") or "").strip()
+    if categoria not in CATEGORIAS_CONOCIMIENTO:
+        return _cors(web.json_response({"error": "Categoria invalida."}, status=400))
+    if not clave or not titulo or len(clave) > 100 or len(titulo) > 200:
+        return _cors(
+            web.json_response({"error": "Clave y titulo son obligatorios."}, status=400)
+        )
+    if not isinstance(contenido, dict):
+        return _cors(
+            web.json_response({"error": "Contenido debe ser un objeto."}, status=400)
+        )
+    if len(motivo) > 500:
+        return _cors(web.json_response({"error": "Motivo demasiado largo."}, status=400))
+
+    try:
+        funcion: OperacionPanel = peticion.app["crear_borrador_conocimiento"]
+        resultado = await funcion(
+            peticion.app["config"],
+            tenant_id=tenant.id,
+            categoria=categoria,
+            clave=clave,
+            titulo=titulo,
+            contenido=contenido,
+            usuario_id=usuario_id,
+            motivo=motivo,
+        )
+    except Exception:
+        logger.exception("no se pudo crear el borrador de conocimiento")
+        return _cors(
+            web.json_response({"error": "No se pudo guardar el borrador."}, status=503)
+        )
+    return _cors(web.json_response({"borrador": resultado}, status=201))
+
+
+async def publicar_version_del_panel(peticion: web.Request) -> web.Response:
+    usuario_id, tenant, _, error = await _contexto_del_panel(
+        peticion, peticion.match_info["tenant_slug"]
+    )
+    if error is not None:
+        return error
+    try:
+        cuerpo = await peticion.json()
+    except Exception:
+        cuerpo = {}
+    motivo = str(cuerpo.get("motivo") or "").strip()
+    if len(motivo) > 500:
+        return _cors(web.json_response({"error": "Motivo demasiado largo."}, status=400))
+    try:
+        funcion: OperacionPanel = peticion.app["publicar_version_conocimiento"]
+        resultado = await funcion(
+            peticion.app["config"],
+            tenant_id=tenant.id,
+            version_id=peticion.match_info["version_id"],
+            usuario_id=usuario_id,
+            motivo=motivo,
+        )
+    except Exception:
+        logger.exception("no se pudo publicar la version de conocimiento")
+        return _cors(
+            web.json_response({"error": "No se pudo publicar la version."}, status=503)
+        )
+    return _cors(web.json_response({"publicacion": resultado}))
+
+
 async def emitir_token(peticion: web.Request) -> web.Response:
     config: Config = peticion.app["config"]
     limitador: Limitador = peticion.app["limitador"]
     obtener_tenant: ObtenerTenant = peticion.app["obtener_tenant"]
     tenant_de_dominio: TenantDeDominio = peticion.app["tenant_de_dominio"]
+    usuario_de_token: UsuarioDeToken = peticion.app["usuario_de_token"]
+    rol_de_usuario_en_tenant: RolDeUsuarioEnTenant = peticion.app[
+        "rol_de_usuario_en_tenant"
+    ]
 
     try:
         cuerpo = await peticion.json()
@@ -152,6 +341,21 @@ async def emitir_token(peticion: web.Request) -> web.Response:
             )
         )
 
+    # El modo interno nunca viene del cuerpo. Solo se concede cuando Supabase
+    # valida el JWT y ese usuario pertenece al tenant que ya resolvio el
+    # dominio. Cualquier error de auth falla cerrado sin tirar la landing.
+    modo = "publico"
+    token_sesion = _token_bearer(peticion)
+    if token_sesion:
+        try:
+            usuario_id = await usuario_de_token(config, token_sesion)
+            if usuario_id and await rol_de_usuario_en_tenant(
+                config, usuario_id, tenant.id
+            ):
+                modo = "interno"
+        except Exception:
+            logger.info("sesion de panel invalida; se emite modo publico")
+
     # La voz solo tiene sentido en los motores de voz a voz; en el pipeline
     # se ignora (su voz es la clonada de Fish, por tenant). Igual que el
     # motor, viaja firmada adentro del nombre de sala: el navegador no puede
@@ -195,6 +399,7 @@ async def emitir_token(peticion: web.Request) -> web.Response:
                     "nivel": nivel.numero,
                     "voz": voz,
                     "tenant": tenant.slug,
+                    "modo": modo,
                 }
             )
         )
@@ -207,8 +412,8 @@ async def emitir_token(peticion: web.Request) -> web.Response:
     )
 
     logger.info(
-        "token emitido | nivel=%s motor=%s tenant=%s voz=%s sala=%s",
-        nivel.numero, nivel.motor, tenant.slug, voz, sala,
+        "token emitido | nivel=%s motor=%s tenant=%s modo=%s voz=%s sala=%s",
+        nivel.numero, nivel.motor, tenant.slug, modo, voz, sala,
     )
     return _cors(
         web.json_response(
@@ -235,6 +440,12 @@ def crear_app(
     config: Config | None = None,
     obtener_tenant: ObtenerTenant | None = None,
     tenant_de_dominio: TenantDeDominio | None = None,
+    usuario_de_token: UsuarioDeToken | None = None,
+    rol_de_usuario_en_tenant: RolDeUsuarioEnTenant | None = None,
+    tenants_de_usuario: TenantsDeUsuario | None = None,
+    conocimiento_para_panel: ConocimientoParaPanel | None = None,
+    crear_borrador_conocimiento: OperacionPanel | None = None,
+    publicar_version_conocimiento: OperacionPanel | None = None,
 ) -> web.Application:
     cfg = config or cargar()
 
@@ -254,6 +465,20 @@ def crear_app(
     app["config"] = cfg
     app["obtener_tenant"] = obtener_tenant or repositorio.obtener_tenant
     app["tenant_de_dominio"] = tenant_de_dominio or repositorio.tenant_de_dominio
+    app["usuario_de_token"] = usuario_de_token or repositorio.usuario_de_token
+    app["rol_de_usuario_en_tenant"] = (
+        rol_de_usuario_en_tenant or repositorio.rol_de_usuario_en_tenant
+    )
+    app["tenants_de_usuario"] = tenants_de_usuario or repositorio.tenants_de_usuario
+    app["conocimiento_para_panel"] = (
+        conocimiento_para_panel or repositorio.conocimiento_para_panel
+    )
+    app["crear_borrador_conocimiento"] = (
+        crear_borrador_conocimiento or repositorio.crear_borrador_conocimiento
+    )
+    app["publicar_version_conocimiento"] = (
+        publicar_version_conocimiento or repositorio.publicar_version_conocimiento
+    )
     app["limitador"] = Limitador(
         por_ip_hora=cfg.max_sesiones_por_ip_hora,
         por_dia=cfg.max_sesiones_por_dia,
@@ -264,6 +489,19 @@ def crear_app(
             web.get("/api/niveles", listar_niveles),
             web.get("/api/voces", listar_voces),
             web.post("/api/token", emitir_token),
+            web.get("/api/panel/tenants", listar_tenants_del_panel),
+            web.get(
+                "/api/panel/{tenant_slug}/conocimiento",
+                listar_conocimiento_del_panel,
+            ),
+            web.post(
+                "/api/panel/{tenant_slug}/conocimiento/borradores",
+                crear_borrador_del_panel,
+            ),
+            web.post(
+                "/api/panel/{tenant_slug}/conocimiento/{version_id}/publicar",
+                publicar_version_del_panel,
+            ),
             web.options("/api/{resto:.*}", preflight),
         ]
     )

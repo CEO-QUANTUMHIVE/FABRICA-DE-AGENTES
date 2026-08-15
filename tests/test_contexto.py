@@ -1,6 +1,6 @@
 from motor_voz.brain.contexto import construir_contexto
 from motor_voz.brain.prompt import ENTREGA_LIVE
-from motor_voz.brain.tenants.modelos import PerfilTenant, Servicio, Tenant
+from motor_voz.brain.tenants.modelos import ConocimientoTenant, PerfilTenant, Servicio, Tenant
 
 QUANTUMHIVE = Tenant(
     id="1", slug="quantumhive", nombre="QuantumHive", idioma="es",
@@ -16,6 +16,25 @@ DEMO_CAPILAR = Tenant(
     prompt_propio="Atendes en la barberia demo.",
     servicios=(Servicio(nombre="Corte clasico", descripcion="Corte tradicional"),),
     voz=None,
+)
+
+CON_CONOCIMIENTO = Tenant(
+    id="3", slug="comercio", nombre="Comercio", idioma="es",
+    perfil=PerfilTenant(slug="comercio", nombre="Comercio", prompt_base="Identidad."),
+    prompt_propio="",
+    servicios=(), voz=None,
+    conocimiento=(
+        ConocimientoTenant(
+            id="c1", categoria="horario", clave="horario_general",
+            titulo="Horario habitual", version_id="v2", numero=2,
+            contenido={"lunes_a_viernes": "09:00-18:00"},
+        ),
+        ConocimientoTenant(
+            id="c2", categoria="precio", clave="corte",
+            titulo="Precio corte", version_id="v1", numero=1,
+            contenido={"moneda": "ARS", "precio": 25000},
+        ),
+    ),
 )
 
 
@@ -58,3 +77,14 @@ def test_un_tenant_sin_servicios_no_rompe():
     )
     p = construir_contexto(sin_servicios)
     assert "Prompt propio sin servicios todavia." in p
+
+
+def test_incluye_solo_conocimiento_publicado_del_tenant():
+    p = construir_contexto(CON_CONOCIMIENTO)
+    assert "Conocimiento aprobado y vigente" in p
+    assert "09:00-18:00" in p
+    assert '"precio":25000' in p
+
+
+def test_conocimiento_no_se_mezcla_con_otro_tenant():
+    assert "09:00-18:00" not in construir_contexto(QUANTUMHIVE)

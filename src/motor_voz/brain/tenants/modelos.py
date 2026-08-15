@@ -6,7 +6,8 @@ contrato que usan el resolver, el context builder y la seleccion de voz.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -58,6 +59,17 @@ class DominioTenant:
 
 
 @dataclass(frozen=True)
+class ConocimientoTenant:
+    id: str
+    categoria: str
+    clave: str
+    titulo: str
+    version_id: str
+    numero: int
+    contenido: dict[str, Any]
+
+
+@dataclass(frozen=True)
 class Tenant:
     id: str
     slug: str
@@ -67,3 +79,4 @@ class Tenant:
     prompt_propio: str
     servicios: tuple[Servicio, ...]
     voz: VozTenant | None
+    conocimiento: tuple[ConocimientoTenant, ...] = field(default_factory=tuple)

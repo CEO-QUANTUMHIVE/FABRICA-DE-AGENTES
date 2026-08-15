@@ -75,7 +75,9 @@ class TestCanal:
     def test_la_web_avisa_que_lo_pueden_interrumpir(self):
         assert "interrumpir" in construir(canal="web").lower()
 
-    @pytest.mark.parametrize("canal", ["whatsapp", "telegram"])
+    @pytest.mark.parametrize(
+        "canal", ["whatsapp", "instagram", "facebook", "telegram"]
+    )
     def test_mensajeria_avisa_que_no_hay_interrupcion(self, canal):
         assert "no hay interrupcion" in construir(canal=canal).lower()
 

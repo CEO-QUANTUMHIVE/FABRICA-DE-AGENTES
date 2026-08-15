@@ -60,16 +60,66 @@ async def _dominio_falso(config, dominio):
     return DOMINIOS.get(dominio)
 
 
+async def _usuario_anonimo(config, token):
+    return None
+
+
+async def _sin_rol(config, usuario_id, tenant_id):
+    return None
+
+
+async def _sin_tenants(config, usuario_id):
+    return []
+
+
+async def _sin_conocimiento(config, tenant_id):
+    return []
+
+
+async def _operacion_no_configurada(config, **datos):
+    raise AssertionError("la operacion del panel no fue inyectada en el test")
+
+
+def _metadata_del_token(token: str) -> dict:
+    import base64
+
+    payload = token.split(".")[1]
+    while len(payload) % 4:
+        payload += "="
+    claims = json.loads(base64.urlsafe_b64decode(payload))
+    return json.loads(claims["metadata"])
+
+
 @pytest.fixture
 def cliente(aiohttp_client):
     async def _crear(**extra):
         obtener_tenant = extra.pop("obtener_tenant", _tenant_falso)
         tenant_de_dominio = extra.pop("tenant_de_dominio", _dominio_falso)
+        usuario_de_token = extra.pop("usuario_de_token", _usuario_anonimo)
+        rol_de_usuario_en_tenant = extra.pop(
+            "rol_de_usuario_en_tenant", _sin_rol
+        )
+        tenants_de_usuario = extra.pop("tenants_de_usuario", _sin_tenants)
+        conocimiento_para_panel = extra.pop(
+            "conocimiento_para_panel", _sin_conocimiento
+        )
+        crear_borrador_conocimiento = extra.pop(
+            "crear_borrador_conocimiento", _operacion_no_configurada
+        )
+        publicar_version_conocimiento = extra.pop(
+            "publicar_version_conocimiento", _operacion_no_configurada
+        )
         return await aiohttp_client(
             crear_app(
                 cargar(ENTORNO | extra),
                 obtener_tenant=obtener_tenant,
                 tenant_de_dominio=tenant_de_dominio,
+                usuario_de_token=usuario_de_token,
+                rol_de_usuario_en_tenant=rol_de_usuario_en_tenant,
+                tenants_de_usuario=tenants_de_usuario,
+                conocimiento_para_panel=conocimiento_para_panel,
+                crear_borrador_conocimiento=crear_borrador_conocimiento,
+                publicar_version_conocimiento=publicar_version_conocimiento,
             )
         )
     return _crear
@@ -201,6 +251,11 @@ class TestEndpoints:
         r = await c.get("/api/niveles")
         assert r.headers.get("Access-Control-Allow-Origin") == "*"
 
+    async def test_cors_permite_enviar_la_sesion(self, cliente):
+        c = await cliente()
+        r = await c.options("/api/token")
+        assert "Authorization" in r.headers["Access-Control-Allow-Headers"]
+
 
 class TestVoces:
     async def test_lista_las_voces_de_gemini(self, cliente):
@@ -286,17 +341,190 @@ class TestTenant:
 
     async def test_el_tenant_va_en_la_metadata_firmada(self, cliente):
         """El agente lo lee de aca, no de lo que diga el navegador."""
-        import base64
-        import json as jsonlib
-
         c = await cliente()
         d = await (await c.post("/api/token", json={"nivel": 1})).json()
-        payload = d["token"].split(".")[1]
-        while len(payload) % 4:
-            payload += "="
-        claims = jsonlib.loads(base64.urlsafe_b64decode(payload))
-        metadata = jsonlib.loads(claims["metadata"])
+        metadata = _metadata_del_token(d["token"])
         assert metadata["tenant"] == "quantumhive"
+
+class TestAutenticacionDelModo:
+    async def test_sin_sesion_el_modo_es_publico(self, cliente):
+        c = await cliente()
+        d = await (await c.post("/api/token", json={"nivel": 1})).json()
+        assert _metadata_del_token(d["token"])["modo"] == "publico"
+
+    async def test_con_sesion_de_otro_negocio_el_modo_es_publico(self, cliente):
+        async def usuario(config, token):
+            return "usuario-otro-negocio"
+
+        async def rol(config, usuario_id, tenant_id):
+            assert tenant_id == "id-quantumhive"
+            return None
+
+        c = await cliente(usuario_de_token=usuario, rol_de_usuario_en_tenant=rol)
+        r = await c.post(
+            "/api/token",
+            json={"nivel": 1},
+            headers={"Authorization": "Bearer jwt-valido"},
+        )
+        assert _metadata_del_token((await r.json())["token"])["modo"] == "publico"
+
+    async def test_con_sesion_del_dueno_el_modo_es_interno(self, cliente):
+        async def usuario(config, token):
+            assert token == "jwt-valido"
+            return "usuario-quantumhive"
+
+        async def rol(config, usuario_id, tenant_id):
+            assert (usuario_id, tenant_id) == (
+                "usuario-quantumhive",
+                "id-quantumhive",
+            )
+            return "dueño"
+
+        c = await cliente(usuario_de_token=usuario, rol_de_usuario_en_tenant=rol)
+        r = await c.post(
+            "/api/token",
+            json={"nivel": 1},
+            headers={"Authorization": "Bearer jwt-valido"},
+        )
+        assert _metadata_del_token((await r.json())["token"])["modo"] == "interno"
+
+    async def test_un_token_invalido_no_rompe_y_da_publico(self, cliente):
+        async def token_roto(config, token):
+            raise ValueError("firma invalida")
+
+        c = await cliente(usuario_de_token=token_roto)
+        r = await c.post(
+            "/api/token",
+            json={"nivel": 1},
+            headers={"Authorization": "Bearer inventado"},
+        )
+        assert r.status == 200
+        assert _metadata_del_token((await r.json())["token"])["modo"] == "publico"
+
+    async def test_el_cuerpo_no_puede_pedir_modo_interno(self, cliente):
+        c = await cliente()
+        r = await c.post("/api/token", json={"nivel": 1, "modo": "interno"})
+        assert _metadata_del_token((await r.json())["token"])["modo"] == "publico"
+
+
+class TestApiDelPanel:
+    @staticmethod
+    async def _usuario(config, token):
+        return "usuario-quantumhive" if token == "jwt-valido" else None
+
+    @staticmethod
+    async def _rol(config, usuario_id, tenant_id):
+        if (usuario_id, tenant_id) == ("usuario-quantumhive", "id-quantumhive"):
+            return "dueno"
+        return None
+
+    async def test_sin_sesion_responde_401(self, cliente):
+        c = await cliente()
+        r = await c.get("/api/panel/tenants")
+        assert r.status == 401
+
+    async def test_lista_solo_los_negocios_del_usuario(self, cliente):
+        async def propios(config, usuario_id):
+            assert usuario_id == "usuario-quantumhive"
+            return [{"id": "id-quantumhive", "slug": "quantumhive", "rol": "dueno"}]
+
+        c = await cliente(usuario_de_token=self._usuario, tenants_de_usuario=propios)
+        r = await c.get(
+            "/api/panel/tenants", headers={"Authorization": "Bearer jwt-valido"}
+        )
+        assert r.status == 200
+        assert [t["slug"] for t in (await r.json())["tenants"]] == ["quantumhive"]
+
+    async def test_una_sesion_de_otro_negocio_responde_403(self, cliente):
+        c = await cliente(usuario_de_token=self._usuario, rol_de_usuario_en_tenant=_sin_rol)
+        r = await c.get(
+            "/api/panel/quantumhive/conocimiento",
+            headers={"Authorization": "Bearer jwt-valido"},
+        )
+        assert r.status == 403
+
+    async def test_lista_conocimiento_del_tenant_autorizado(self, cliente):
+        async def conocimiento(config, tenant_id):
+            assert tenant_id == "id-quantumhive"
+            return [{"id": "pieza-1", "titulo": "Horarios", "versiones": []}]
+
+        c = await cliente(
+            usuario_de_token=self._usuario,
+            rol_de_usuario_en_tenant=self._rol,
+            conocimiento_para_panel=conocimiento,
+        )
+        r = await c.get(
+            "/api/panel/quantumhive/conocimiento",
+            headers={"Authorization": "Bearer jwt-valido"},
+        )
+        datos = await r.json()
+        assert r.status == 200
+        assert datos["tenant"] == "quantumhive"
+        assert datos["conocimiento"][0]["id"] == "pieza-1"
+
+    async def test_el_borrador_usa_tenant_y_usuario_resueltos(self, cliente):
+        recibido = {}
+
+        async def crear(config, **datos):
+            recibido.update(datos)
+            return {"version_id": "version-1", "publicada": False}
+
+        c = await cliente(
+            usuario_de_token=self._usuario,
+            rol_de_usuario_en_tenant=self._rol,
+            crear_borrador_conocimiento=crear,
+        )
+        r = await c.post(
+            "/api/panel/quantumhive/conocimiento/borradores",
+            headers={"Authorization": "Bearer jwt-valido"},
+            json={
+                "tenant_id": "id-de-otro-negocio",
+                "categoria": "horario",
+                "clave": "atencion",
+                "titulo": "Horario de atencion",
+                "contenido": {"lunes": "9 a 18"},
+            },
+        )
+        assert r.status == 201
+        assert recibido["tenant_id"] == "id-quantumhive"
+        assert recibido["usuario_id"] == "usuario-quantumhive"
+
+    async def test_rechaza_un_borrador_invalido(self, cliente):
+        c = await cliente(
+            usuario_de_token=self._usuario,
+            rol_de_usuario_en_tenant=self._rol,
+        )
+        r = await c.post(
+            "/api/panel/quantumhive/conocimiento/borradores",
+            headers={"Authorization": "Bearer jwt-valido"},
+            json={"categoria": "inventada", "contenido": []},
+        )
+        assert r.status == 400
+
+    async def test_publicar_tambien_usa_el_tenant_resuelto(self, cliente):
+        recibido = {}
+
+        async def publicar(config, **datos):
+            recibido.update(datos)
+            return {"version_id": datos["version_id"], "publicada": True}
+
+        c = await cliente(
+            usuario_de_token=self._usuario,
+            rol_de_usuario_en_tenant=self._rol,
+            publicar_version_conocimiento=publicar,
+        )
+        r = await c.post(
+            "/api/panel/quantumhive/conocimiento/version-2/publicar",
+            headers={"Authorization": "Bearer jwt-valido"},
+            json={"motivo": "Nuevo precio"},
+        )
+        assert r.status == 200
+        assert recibido == {
+            "tenant_id": "id-quantumhive",
+            "version_id": "version-2",
+            "usuario_id": "usuario-quantumhive",
+            "motivo": "Nuevo precio",
+        }
 
 
 class TestCredencialesDeSupabase:

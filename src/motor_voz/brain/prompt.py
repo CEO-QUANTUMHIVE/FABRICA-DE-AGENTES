@@ -92,13 +92,21 @@ CANAL_WEB = (
 )
 
 CANAL_MENSAJERIA = (
-    "Estas en WhatsApp o Telegram. No hay interrupcion: el visitante escucha o\n"
+    "Estas en un canal de mensajeria. No hay interrupcion: el visitante escucha o\n"
     "lee el mensaje entero. Podes ser un poco mas extenso, pero nunca mandes\n"
     "listas ni parrafos largos. Puede pasar tiempo entre mensajes, asi que no\n"
     "des por sentado que se acuerda de lo ultimo que dijiste."
 )
 
-CANALES = {"web": CANAL_WEB, "whatsapp": CANAL_MENSAJERIA, "telegram": CANAL_MENSAJERIA}
+CANALES = {
+    "web": CANAL_WEB,
+    "whatsapp": CANAL_MENSAJERIA,
+    "instagram": CANAL_MENSAJERIA,
+    "facebook": CANAL_MENSAJERIA,
+    # Se conserva porque ya estaba soportado por el cerebro, aunque no forme
+    # parte de los cuatro canales comerciales de esta etapa.
+    "telegram": CANAL_MENSAJERIA,
+}
 
 # Los ejemplos van al final: el modelo copia mejor de un ejemplo concreto que
 # de una descripcion, y lo ultimo que lee es lo que mas pesa.
@@ -129,7 +137,7 @@ def construir(
 
     Args:
         motor: pipeline, gemini u openai. Define como se entrega el habla.
-        canal: web, whatsapp o telegram. Define el formato.
+        canal: web, whatsapp, instagram, facebook o telegram. Define el formato.
         contexto_extra: datos de la sesion. Vacio por defecto.
         identidad: capa 1 del prompt. Default: la identidad de QuantumHive.
             Un tenant con perfil propio (spec S5) pasa la suya.

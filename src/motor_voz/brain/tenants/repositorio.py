@@ -18,7 +18,15 @@ from supabase import AsyncClient, acreate_client
 
 from datetime import datetime, timedelta, timezone
 
+from motor_voz.brain.mensajes import (
+    CanalTenant,
+    Conversacion,
+    MensajeEntrante,
+    MensajeGuardado,
+    ResultadoIngreso,
+)
 from motor_voz.brain.tenants.modelos import (
+    ConocimientoTenant,
     DominioTenant,
     Lead,
     PerfilTenant,
@@ -33,8 +41,273 @@ class TenantNoEncontrado(RuntimeError):
     """No existe un tenant activo con ese slug."""
 
 
+class CanalNoEncontrado(RuntimeError):
+    """La cuenta externa no corresponde a un canal conectado y activo."""
+
+
 async def _cliente(config: Config) -> AsyncClient:
     return await acreate_client(config.supabase_url, config.supabase_service_role_key)
+
+
+async def usuario_de_token(config: Config, token: str) -> str | None:
+    """Valida un access token con Supabase Auth y devuelve el usuario.
+
+    No se decodifica ni verifica el JWT a mano. Supabase comprueba firma,
+    expiracion y sesion; cualquier token sin usuario valido queda cerrado.
+    """
+    if not token.strip():
+        return None
+    cliente = await _cliente(config)
+    respuesta = await cliente.auth.get_user(token)
+    usuario = getattr(respuesta, "user", None)
+    return str(usuario.id) if usuario and usuario.id else None
+
+
+async def rol_de_usuario_en_tenant(
+    config: Config, usuario_id: str, tenant_id: str
+) -> str | None:
+    """Rol del usuario en ESE tenant; tener sesion sola no alcanza."""
+    cliente = await _cliente(config)
+    respuesta = (
+        await cliente.table("tenant_usuarios")
+        .select("rol")
+        .eq("usuario_id", usuario_id)
+        .eq("tenant_id", tenant_id)
+        .maybe_single()
+        .execute()
+    )
+    if respuesta is None or respuesta.data is None:
+        return None
+    return respuesta.data.get("rol")
+
+
+async def tenants_de_usuario(config: Config, usuario_id: str) -> list[dict]:
+    """Negocios activos a los que pertenece un usuario autenticado.
+
+    Se consulta primero la membresia y despues los tenants permitidos. Asi la
+    API del panel nunca ofrece un catalogo global de negocios.
+    """
+    cliente = await _cliente(config)
+    membresias_resp = (
+        await cliente.table("tenant_usuarios")
+        .select("tenant_id, rol")
+        .eq("usuario_id", usuario_id)
+        .execute()
+    )
+    membresias = membresias_resp.data or []
+    if not membresias:
+        return []
+
+    rol_por_tenant = {fila["tenant_id"]: fila["rol"] for fila in membresias}
+    tenants_resp = (
+        await cliente.table("tenants")
+        .select("id, slug, nombre, estado")
+        .in_("id", list(rol_por_tenant))
+        .eq("estado", "activo")
+        .order("nombre")
+        .execute()
+    )
+    return [
+        {
+            "id": fila["id"],
+            "slug": fila["slug"],
+            "nombre": fila["nombre"],
+            "estado": fila["estado"],
+            "rol": rol_por_tenant[fila["id"]],
+        }
+        for fila in (tenants_resp.data or [])
+    ]
+
+
+async def canal_de_cuenta(
+    config: Config, *, canal: str, cuenta_externa_id: str
+) -> CanalTenant:
+    """Resuelve el tenant por la cuenta que RECIBE el mensaje.
+
+    El webhook no puede declarar un tenant. WhatsApp aporta phone_number_id;
+    Instagram y Facebook, la cuenta/pagina receptora. Esa identidad externa
+    es la que se mapea aca a un unico tenant activo.
+    """
+    cliente = await _cliente(config)
+    respuesta = (
+        await cliente.table("tenant_canales")
+        .select("id, tenant_id, canal, cuenta_externa_id, nombre, estado, tenants!inner(estado)")
+        .eq("canal", canal)
+        .eq("cuenta_externa_id", cuenta_externa_id.strip())
+        .eq("estado", "conectado")
+        .eq("tenants.estado", "activo")
+        .maybe_single()
+        .execute()
+    )
+    if respuesta is None or respuesta.data is None:
+        raise CanalNoEncontrado(
+            f"No hay canal {canal!r} conectado para esa cuenta externa"
+        )
+    datos = respuesta.data
+    return CanalTenant(
+        id=datos["id"],
+        tenant_id=datos["tenant_id"],
+        canal=datos["canal"],
+        cuenta_externa_id=datos["cuenta_externa_id"],
+        nombre=datos.get("nombre", ""),
+        estado=datos["estado"],
+    )
+
+
+async def registrar_mensaje_entrante(
+    config: Config, *, tenant_canal_id: str, mensaje: MensajeEntrante
+) -> ResultadoIngreso:
+    """Persiste webhook + conversacion + mensaje en una transaccion idempotente."""
+    cliente = await _cliente(config)
+    respuesta = await cliente.rpc(
+        "registrar_mensaje_entrante",
+        {
+            "p_tenant_canal_id": tenant_canal_id,
+            "p_tenant_id": mensaje.tenant_id,
+            "p_canal": mensaje.canal,
+            "p_conversacion_externa_id": mensaje.conversacion_externa_id,
+            "p_remitente_externo_id": mensaje.remitente_externo_id,
+            "p_evento_externo_id": mensaje.evento_externo_id,
+            "p_mensaje_externo_id": mensaje.mensaje_externo_id,
+            "p_texto": mensaje.texto,
+            "p_recibido_en": mensaje.recibido_en.isoformat(),
+            "p_payload": mensaje.payload,
+        },
+    ).execute()
+    datos = respuesta.data or {}
+    return ResultadoIngreso(
+        duplicado=bool(datos.get("duplicado")),
+        inbox_id=datos.get("inbox_id"),
+        conversacion_id=datos.get("conversacion_id"),
+        mensaje_id=datos.get("mensaje_id"),
+    )
+
+
+async def conversaciones_de(
+    config: Config, tenant_id: str, *, limite: int = 50
+) -> list[Conversacion]:
+    """Conversaciones de un solo tenant para chat y metricas del panel."""
+    cliente = await _cliente(config)
+    respuesta = (
+        await cliente.table("conversaciones")
+        .select(
+            "id, canal, contacto_externo_id, nombre_contacto, "
+            "modo_atencion, ultimo_mensaje_en"
+        )
+        .eq("tenant_id", tenant_id)
+        .order("ultimo_mensaje_en", desc=True)
+        .limit(max(1, min(limite, 200)))
+        .execute()
+    )
+    return [Conversacion(**fila) for fila in (respuesta.data or [])]
+
+
+async def mensajes_de_conversacion(
+    config: Config, *, tenant_id: str, conversacion_id: str, limite: int = 100
+) -> list[MensajeGuardado]:
+    """Mensajes de una conversacion, exigiendo tambien su tenant."""
+    cliente = await _cliente(config)
+    respuesta = (
+        await cliente.table("mensajes")
+        .select("id, canal, direccion, texto, estado, ocurrido_en")
+        .eq("tenant_id", tenant_id)
+        .eq("conversacion_id", conversacion_id)
+        .order("ocurrido_en", desc=False)
+        .limit(max(1, min(limite, 500)))
+        .execute()
+    )
+    return [MensajeGuardado(**fila) for fila in (respuesta.data or [])]
+
+
+async def crear_borrador_conocimiento(
+    config: Config,
+    *,
+    tenant_id: str,
+    categoria: str,
+    clave: str,
+    titulo: str,
+    contenido: dict,
+    usuario_id: str | None = None,
+    motivo: str = "",
+) -> dict:
+    """Crea una version que aun NO afecta las respuestas del agente."""
+    cliente = await _cliente(config)
+    respuesta = await cliente.rpc(
+        "crear_borrador_conocimiento",
+        {
+            "p_tenant_id": tenant_id,
+            "p_categoria": categoria,
+            "p_clave": clave,
+            "p_titulo": titulo,
+            "p_contenido": contenido,
+            "p_creado_por": usuario_id,
+            "p_motivo": motivo,
+        },
+    ).execute()
+    return respuesta.data or {}
+
+
+async def publicar_version_conocimiento(
+    config: Config,
+    *,
+    tenant_id: str,
+    version_id: str,
+    usuario_id: str | None = None,
+    motivo: str = "",
+) -> dict:
+    """Publica o restaura una version, siempre dentro del tenant indicado."""
+    cliente = await _cliente(config)
+    respuesta = await cliente.rpc(
+        "publicar_version_conocimiento",
+        {
+            "p_tenant_id": tenant_id,
+            "p_version_id": version_id,
+            "p_publicado_por": usuario_id,
+            "p_motivo": motivo,
+        },
+    ).execute()
+    return respuesta.data or {}
+
+
+async def conocimiento_para_panel(config: Config, tenant_id: str) -> list[dict]:
+    """Piezas y todas sus versiones, siempre limitadas a un tenant."""
+    cliente = await _cliente(config)
+    piezas_resp = (
+        await cliente.table("conocimiento_tenant")
+        .select(
+            "id, categoria, clave, titulo, estado, version_publicada_id, "
+            "created_at, updated_at"
+        )
+        .eq("tenant_id", tenant_id)
+        .order("updated_at", desc=True)
+        .limit(500)
+        .execute()
+    )
+    piezas = piezas_resp.data or []
+    if not piezas:
+        return []
+
+    ids = [fila["id"] for fila in piezas]
+    versiones_resp = (
+        await cliente.table("versiones_conocimiento")
+        .select("id, conocimiento_id, numero, contenido, motivo, creado_por, created_at")
+        .eq("tenant_id", tenant_id)
+        .in_("conocimiento_id", ids)
+        .order("numero", desc=True)
+        .limit(2000)
+        .execute()
+    )
+    versiones_por_pieza: dict[str, list[dict]] = {pieza_id: [] for pieza_id in ids}
+    for version in versiones_resp.data or []:
+        versiones_por_pieza.setdefault(version["conocimiento_id"], []).append(version)
+
+    return [
+        {
+            **pieza,
+            "versiones": versiones_por_pieza.get(pieza["id"], []),
+        }
+        for pieza in piezas
+    ]
 
 
 async def guardar_lead(
@@ -178,6 +451,45 @@ async def obtener_tenant(config: Config, slug: str) -> Tenant:
     )
     voz = VozTenant(**voz_resp.data) if voz_resp and voz_resp.data else None
 
+    conocimiento_resp = (
+        await cliente.table("conocimiento_tenant")
+        .select("id, categoria, clave, titulo, version_publicada_id")
+        .eq("tenant_id", tenant_id)
+        .eq("estado", "activo")
+        .limit(200)
+        .execute()
+    )
+    piezas = [
+        fila for fila in (conocimiento_resp.data or [])
+        if fila.get("version_publicada_id")
+    ]
+    versiones_por_id: dict[str, dict] = {}
+    if piezas:
+        ids_version = [fila["version_publicada_id"] for fila in piezas]
+        versiones_resp = (
+            await cliente.table("versiones_conocimiento")
+            .select("id, numero, contenido")
+            .eq("tenant_id", tenant_id)
+            .in_("id", ids_version)
+            .execute()
+        )
+        versiones_por_id = {
+            fila["id"]: fila for fila in (versiones_resp.data or [])
+        }
+    conocimiento = tuple(
+        ConocimientoTenant(
+            id=pieza["id"],
+            categoria=pieza["categoria"],
+            clave=pieza["clave"],
+            titulo=pieza["titulo"],
+            version_id=pieza["version_publicada_id"],
+            numero=versiones_por_id[pieza["version_publicada_id"]]["numero"],
+            contenido=versiones_por_id[pieza["version_publicada_id"]]["contenido"],
+        )
+        for pieza in piezas
+        if pieza["version_publicada_id"] in versiones_por_id
+    )
+
     return Tenant(
         id=tenant_id,
         slug=datos_tenant["slug"],
@@ -187,4 +499,5 @@ async def obtener_tenant(config: Config, slug: str) -> Tenant:
         prompt_propio=prompt_propio,
         servicios=servicios,
         voz=voz,
+        conocimiento=conocimiento,
     )
