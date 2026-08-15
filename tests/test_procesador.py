@@ -1,0 +1,239 @@
+"""El worker que convierte un mensaje recibido en una respuesta encolada.
+
+Lo que importa acá no es que conteste: es que no conteste dos veces, que no
+conteste cuando atiende una persona, y que un evento roto no se lleve puesto
+al resto del lote.
+"""
+
+from __future__ import annotations
+
+import pytest
+
+from motor_voz import config as config_mod
+from motor_voz.brain.conversacion import Turno
+from motor_voz.brain.tenants.modelos import PerfilTenant, Servicio, Tenant
+from motor_voz.channels import procesador
+
+
+def _tenant() -> Tenant:
+    return Tenant(
+        id="tenant-1",
+        slug="quantumhive",
+        nombre="QuantumHive",
+        idioma="es",
+        perfil=PerfilTenant(slug="quantumhive", nombre="QuantumHive", prompt_base=""),
+        prompt_propio="",
+        servicios=(Servicio(nombre="Agentes de voz", descripcion="24/7"),),
+        voz=None,
+    )
+
+
+def _evento(evento_id: str = "ev-1", **cambios) -> procesador.EventoInbox:
+    datos = {
+        "id": evento_id,
+        "tenant_id": "tenant-1",
+        "tenant_canal_id": "canal-1",
+        "conversacion_id": "conv-1",
+        "canal": "whatsapp",
+        "evento_externo_id": f"mensaje:wamid.{evento_id}",
+    }
+    datos.update(cambios)
+    return procesador.EventoInbox(**datos)
+
+
+class _Repo:
+    def __init__(
+        self,
+        eventos=(),
+        modo_atencion="automatico",
+        turnos=(Turno("user", "hola"),),
+        respuesta="Hola! Contame.",
+    ):
+        self.eventos = list(eventos)
+        self.contexto = procesador.ContextoConversacion(
+            modo_atencion=modo_atencion, turnos=tuple(turnos)
+        )
+        self.respuesta = respuesta
+        self.encolados: list[dict] = []
+        self.cerrados: list[tuple[str, bool, str]] = []
+        self.pedidos_al_cerebro: list[dict] = []
+
+    async def tomar(self, config, *, limite):
+        tomados, self.eventos = self.eventos[:limite], self.eventos[limite:]
+        return tomados
+
+    async def cerrar(self, config, *, evento_id, ok, error=""):
+        self.cerrados.append((evento_id, ok, error))
+        return "procesado" if ok else "fallido"
+
+    async def tenant_de_id(self, config, tenant_id):
+        return _tenant()
+
+    async def contexto_de(self, config, *, tenant_id, conversacion_id):
+        return self.contexto
+
+    async def encolar(self, config, **kwargs):
+        self.encolados.append(kwargs)
+        return True
+
+    async def responder(self, config, tenant, **kwargs):
+        self.pedidos_al_cerebro.append(kwargs)
+        return self.respuesta
+
+
+def _deps(repo: _Repo) -> procesador.Dependencias:
+    return procesador.Dependencias(
+        tomar=repo.tomar,
+        cerrar=repo.cerrar,
+        tenant_de_id=repo.tenant_de_id,
+        contexto_de=repo.contexto_de,
+        encolar=repo.encolar,
+        responder=repo.responder,
+    )
+
+
+@pytest.fixture
+def config():
+    return config_mod.cargar(
+        {
+            "GROQ_API_KEY": "x",
+            "FISH_API_KEY": "x",
+            "LIVEKIT_URL": "wss://ejemplo",
+            "LIVEKIT_API_KEY": "x",
+            "LIVEKIT_API_SECRET": "x",
+            "SUPABASE_URL": "https://ejemplo.supabase.co",
+            "SUPABASE_SERVICE_ROLE_KEY": "x",
+        }
+    )
+
+
+async def test_un_mensaje_pendiente_termina_encolado_como_respuesta(config):
+    repo = _Repo(eventos=[_evento()])
+
+    procesados = await procesador.procesar_pendientes(config, _deps(repo))
+
+    assert procesados == 1
+    assert len(repo.encolados) == 1
+    assert repo.encolados[0]["payload"]["texto"] == "Hola! Contame."
+    assert repo.cerrados == [("ev-1", True, "")]
+
+
+async def test_la_clave_de_idempotencia_sale_del_evento(config):
+    """Si el worker muere despues de encolar y antes de cerrar, al reanudar
+    tiene que chocar contra la misma clave en vez de encolar otra respuesta."""
+    repo = _Repo(eventos=[_evento()])
+
+    await procesador.procesar_pendientes(config, _deps(repo))
+
+    assert repo.encolados[0]["clave_idempotencia"] == "respuesta:mensaje:wamid.ev-1"
+
+
+async def test_el_ultimo_mensaje_es_el_que_se_contesta_y_el_resto_es_historial(config):
+    repo = _Repo(
+        eventos=[_evento()],
+        turnos=(
+            Turno("user", "hola"),
+            Turno("assistant", "hola! contame"),
+            Turno("user", "cuanto sale?"),
+        ),
+    )
+
+    await procesador.procesar_pendientes(config, _deps(repo))
+
+    pedido = repo.pedidos_al_cerebro[0]
+    assert pedido["texto"] == "cuanto sale?"
+    assert [t.texto for t in pedido["historial"]] == ["hola", "hola! contame"]
+    assert pedido["canal"] == "whatsapp"
+
+
+async def test_si_atiende_una_persona_el_agente_se_calla(config):
+    """El handoff no es un aviso: es que deja de contestar."""
+    repo = _Repo(eventos=[_evento()], modo_atencion="humano")
+
+    await procesador.procesar_pendientes(config, _deps(repo))
+
+    assert repo.encolados == []
+    assert repo.pedidos_al_cerebro == []
+    assert repo.cerrados == [("ev-1", True, "")]
+
+
+async def test_una_conversacion_cerrada_tampoco_se_contesta(config):
+    repo = _Repo(eventos=[_evento()], modo_atencion="cerrado")
+
+    await procesador.procesar_pendientes(config, _deps(repo))
+
+    assert repo.encolados == []
+
+
+async def test_un_audio_se_contesta_sin_gastar_un_llm(config):
+    """El parser deja el texto vacio en lo que no sabe leer. Mandarselo al
+    modelo es pagar por que conteste a la nada."""
+    repo = _Repo(eventos=[_evento()], turnos=(Turno("user", "   "),))
+
+    await procesador.procesar_pendientes(config, _deps(repo))
+
+    assert repo.pedidos_al_cerebro == []
+    assert len(repo.encolados) == 1
+    assert repo.encolados[0]["payload"]["texto"] == procesador.SOLO_LEO_TEXTO
+
+
+async def test_si_el_cerebro_falla_no_se_encola_nada_y_el_evento_queda_fallido(config):
+    repo = _Repo(eventos=[_evento()])
+
+    async def explota(config, tenant, **kwargs):
+        raise RuntimeError("groq caido")
+
+    deps = _deps(repo)
+    deps = procesador.Dependencias(**{**deps.__dict__, "responder": explota})
+
+    procesados = await procesador.procesar_pendientes(config, deps)
+
+    assert procesados == 0
+    assert repo.encolados == []
+    evento_id, ok, error = repo.cerrados[0]
+    assert (evento_id, ok) == ("ev-1", False)
+    assert "groq" in error.lower()
+
+
+async def test_un_evento_roto_no_se_lleva_puesto_al_resto_del_lote(config):
+    repo = _Repo(eventos=[_evento("ev-1"), _evento("ev-2", conversacion_id="conv-2")])
+    original = repo.contexto_de
+
+    async def falla_el_primero(config, *, tenant_id, conversacion_id):
+        if conversacion_id == "conv-1":
+            raise RuntimeError("conversacion inaccesible")
+        return await original(config, tenant_id=tenant_id, conversacion_id=conversacion_id)
+
+    deps = procesador.Dependencias(**{**_deps(repo).__dict__, "contexto_de": falla_el_primero})
+
+    await procesador.procesar_pendientes(config, deps)
+
+    assert [c[0] for c in repo.cerrados] == ["ev-1", "ev-2"]
+    assert [c[1] for c in repo.cerrados] == [False, True]
+
+
+async def test_un_evento_sin_conversacion_no_se_reintenta_para_siempre(config):
+    """Sin conversacion no hay nada que contestar y reintentarlo no lo va a
+    arreglar. Se cierra bien, no se deja girando en la cola."""
+    repo = _Repo(eventos=[_evento(conversacion_id=None)])
+
+    await procesador.procesar_pendientes(config, _deps(repo))
+
+    assert repo.encolados == []
+    assert repo.cerrados == [("ev-1", True, "")]
+
+
+async def test_procesa_todo_el_lote_y_devuelve_cuantos(config):
+    repo = _Repo(eventos=[_evento("ev-1"), _evento("ev-2"), _evento("ev-3")])
+
+    procesados = await procesador.procesar_pendientes(config, _deps(repo))
+
+    assert procesados == 3
+    assert len(repo.encolados) == 3
+
+
+async def test_sin_nada_pendiente_no_hace_nada(config):
+    repo = _Repo(eventos=[])
+
+    assert await procesador.procesar_pendientes(config, _deps(repo)) == 0
+    assert repo.cerrados == []
