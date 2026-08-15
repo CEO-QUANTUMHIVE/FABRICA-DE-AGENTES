@@ -132,6 +132,36 @@ cuesta cincuenta veces eso.
 **Grep y leer archivos completos vienen DESPUÉS del grafo, nunca antes.**
 El grafo dice dónde mirar; recién ahí se abre el archivo puntual.
 
+### Cuándo es obligatorio, sin interpretación
+
+Antes de la **primera** lectura o búsqueda que hagas sobre un tema, va una
+consulta al grafo. Un tema nuevo = una consulta nueva. No importa que
+"ya sepas dónde está": creer que sabés es exactamente el estado mental que
+hace saltear el paso.
+
+Es obligatorio antes de:
+
+- buscar cualquier símbolo, función o archivo (`grep`, `find`, `Glob`);
+- abrir un archivo que no editaste vos en esta sesión;
+- responder "dónde está X" o "cómo funciona X";
+- empezar cualquier bloque de trabajo nuevo.
+
+**Lo único que no lo necesita:** archivos que creaste o editaste en esta
+misma sesión, y los cuatro documentos de entrada (`CLAUDE.md`, `AGENTS.md`,
+`docs/MAPA.md`, `docs/CONTINUAR-ACA.md`).
+
+**Si el grafo no sabe, decilo y seguí.** No conoce lo que no está commiteado
+—se regenera en el hook de commit— ni lo que vive en otro repo. Eso es un
+resultado válido, no una excusa para saltearlo la próxima.
+
+> **Pasó el 2026-08-15, y costó plata de verdad.** En una sesión de un día
+> entero, un agente consultó el grafo dos veces y el resto lo hizo a `grep` y
+> lecturas completas: `servidor.py`, `repositorio.py`, `app.js`, `motores.py`,
+> varios enteros y más de una vez. Sergio lo cortó con "me tenés los huevos
+> por el piso". Tenía razón: la regla estaba escrita desde el primer día y se
+> ignoró igual. Por eso ahora está la lista de arriba, que no se puede
+> interpretar.
+
 **Nunca revisar el proyecto entero sin pasar por el grafo.** Si te piden
 "revisá todo", empezá por `graphify query` y `graphify-out/GRAPH_REPORT.md`,
 no por `find` ni por leer archivos en cadena.
