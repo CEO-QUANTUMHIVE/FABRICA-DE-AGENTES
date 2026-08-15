@@ -10,7 +10,11 @@
 --   * un bucle entre dos bots automaticos factura toda la noche y nadie se
 --     entera hasta la factura.
 
-create table public.tenant_limites (
+-- `if not exists` en todo lo que crea: estas migraciones se pueden llegar a
+-- aplicar a mano desde el editor SQL, y en ese caso Supabase no las registra.
+-- Si despues alguien corre `db push`, se vuelven a ejecutar. Que sean
+-- re-ejecutables convierte ese susto en nada.
+create table if not exists public.tenant_limites (
     tenant_id uuid primary key references public.tenants(id) on delete cascade,
     -- El kill-switch. En false el agente deja de contestar YA, sin
     -- desconectar el canal ni perder los mensajes: siguen entrando y
@@ -32,6 +36,7 @@ alter table public.tenant_limites enable row level security;
 revoke all on public.tenant_limites from anon, authenticated;
 grant select on public.tenant_limites to authenticated;
 
+drop policy if exists usuarios_ven_sus_limites on public.tenant_limites;
 create policy usuarios_ven_sus_limites
     on public.tenant_limites for select
     to authenticated
