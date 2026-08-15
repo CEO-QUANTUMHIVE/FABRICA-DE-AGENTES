@@ -20,10 +20,13 @@ from datetime import datetime, timedelta, timezone
 
 from motor_voz.brain.mensajes import (
     CanalTenant,
+    ContextoConversacion,
     Conversacion,
+    EventoInbox,
     MensajeEntrante,
     MensajeGuardado,
     ResultadoIngreso,
+    Turno,
 )
 from motor_voz.brain.tenants.modelos import (
     ConocimientoTenant,
@@ -43,6 +46,14 @@ class TenantNoEncontrado(RuntimeError):
 
 class CanalNoEncontrado(RuntimeError):
     """La cuenta externa no corresponde a un canal conectado y activo."""
+
+
+class ConversacionNoEncontrada(RuntimeError):
+    """No hay una conversacion con ese id EN ESE TENANT.
+
+    Un solo error para "no existe" y "es de otro negocio": distinguirlos
+    confirmaria la existencia de conversaciones ajenas.
+    """
 
 
 async def _cliente(config: Config) -> AsyncClient:
@@ -217,6 +228,163 @@ async def mensajes_de_conversacion(
         .execute()
     )
     return [MensajeGuardado(**fila) for fila in (respuesta.data or [])]
+
+
+# La base guarda la direccion del mensaje; el LLM habla de roles. `sistema`
+# no esta a proposito: son notas internas y no van al prompt.
+_DIRECCION_A_ROL = {"entrante": "user", "saliente": "assistant"}
+
+
+async def tomar_eventos_inbox(
+    config: Config, *, limite: int = 10, bloqueo_segundos: int = 60
+) -> list[EventoInbox]:
+    """Toma un lote pendiente y lo deja bloqueado, en una sola transaccion.
+
+    Va por RPC y no por REST porque el bloqueo tiene que pasar adentro del
+    mismo UPDATE: un SELECT y despues un UPDATE dejan una ventana donde otro
+    worker lee las mismas filas, y eso es contestarle dos veces al cliente.
+    """
+    cliente = await _cliente(config)
+    respuesta = await cliente.rpc(
+        "tomar_eventos_inbox",
+        {
+            "p_limite": max(1, min(limite, 100)),
+            "p_bloqueo_segundos": max(10, bloqueo_segundos),
+        },
+    ).execute()
+    return [
+        EventoInbox(
+            id=fila["id"],
+            tenant_id=fila["tenant_id"],
+            tenant_canal_id=fila["tenant_canal_id"],
+            conversacion_id=fila.get("conversacion_id"),
+            canal=fila["canal"],
+            evento_externo_id=fila["evento_externo_id"],
+        )
+        for fila in (respuesta.data or [])
+    ]
+
+
+async def cerrar_evento_inbox(
+    config: Config, *, evento_id: str, ok: bool, error: str = ""
+) -> str:
+    """Marca el evento como procesado, fallido o descartado.
+
+    Devuelve el estado en que quedo. La funcion de la base decide el
+    descarte a los cinco intentos; aca no se replica esa regla.
+    """
+    cliente = await _cliente(config)
+    respuesta = await cliente.rpc(
+        "cerrar_evento_inbox",
+        {
+            "p_id": evento_id,
+            "p_ok": ok,
+            # Un traceback entero en cada reintento infla la tabla sin
+            # agregar nada: con el principio alcanza para saber que paso.
+            "p_error": (error or "")[:500],
+        },
+    ).execute()
+    return respuesta.data or ""
+
+
+async def contexto_de_conversacion(
+    config: Config, *, tenant_id: str, conversacion_id: str, limite: int = 40
+) -> ContextoConversacion:
+    """El estado de atencion y los ultimos turnos, exigiendo el tenant.
+
+    Trae los ULTIMOS `limite` y los devuelve en orden cronologico. Pedirlos
+    ascendentes y cortar daria los primeros, o sea el arranque de una charla
+    de hace seis meses en vez de lo que se esta hablando ahora.
+    """
+    cliente = await _cliente(config)
+
+    conversacion_resp = (
+        await cliente.table("conversaciones")
+        .select("modo_atencion")
+        .eq("tenant_id", tenant_id)
+        .eq("id", conversacion_id)
+        .maybe_single()
+        .execute()
+    )
+    if conversacion_resp is None or conversacion_resp.data is None:
+        raise ConversacionNoEncontrada(
+            f"No hay conversacion '{conversacion_id}' en ese tenant"
+        )
+
+    mensajes_resp = (
+        await cliente.table("mensajes")
+        .select("direccion, texto, ocurrido_en")
+        .eq("tenant_id", tenant_id)
+        .eq("conversacion_id", conversacion_id)
+        .order("ocurrido_en", desc=True)
+        .limit(max(1, min(limite, 200)))
+        .execute()
+    )
+    turnos = tuple(
+        Turno(rol=_DIRECCION_A_ROL[fila["direccion"]], texto=fila["texto"] or "")
+        for fila in reversed(mensajes_resp.data or [])
+        if fila["direccion"] in _DIRECCION_A_ROL
+    )
+    return ContextoConversacion(
+        modo_atencion=conversacion_resp.data["modo_atencion"], turnos=turnos
+    )
+
+
+async def encolar_respuesta(
+    config: Config,
+    *,
+    tenant_id: str,
+    tenant_canal_id: str,
+    conversacion_id: str,
+    canal: str,
+    clave_idempotencia: str,
+    payload: dict,
+) -> bool:
+    """Deja la respuesta lista para que el cliente del canal la mande.
+
+    True si se encolo, False si ya estaba. La restriccion
+    `(tenant_canal_id, clave_idempotencia)` es la que hace que un worker que
+    muere despues de encolar y antes de confirmar no genere una segunda
+    respuesta al reanudar.
+    """
+    cliente = await _cliente(config)
+    respuesta = (
+        await cliente.table("eventos_outbox")
+        .upsert(
+            {
+                "tenant_id": tenant_id,
+                "tenant_canal_id": tenant_canal_id,
+                "conversacion_id": conversacion_id,
+                "canal": canal,
+                "clave_idempotencia": clave_idempotencia,
+                "payload": payload,
+            },
+            on_conflict="tenant_canal_id,clave_idempotencia",
+            ignore_duplicates=True,
+        )
+        .execute()
+    )
+    return bool(respuesta.data)
+
+
+async def tenant_por_id(config: Config, tenant_id: str) -> Tenant:
+    """El tenant completo, buscado por id en vez de por slug.
+
+    El webhook resuelve un id, no un slug. Se traduce y se delega en
+    `obtener_tenant` para no tener dos caminos que carguen un tenant y se
+    desincronicen cuando uno sume un dato y el otro no.
+    """
+    cliente = await _cliente(config)
+    respuesta = (
+        await cliente.table("tenants")
+        .select("slug")
+        .eq("id", tenant_id)
+        .maybe_single()
+        .execute()
+    )
+    if respuesta is None or respuesta.data is None:
+        raise TenantNoEncontrado(f"No hay tenant con id '{tenant_id}'")
+    return await obtener_tenant(config, respuesta.data["slug"])
 
 
 async def crear_borrador_conocimiento(

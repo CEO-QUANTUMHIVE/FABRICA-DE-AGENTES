@@ -27,6 +27,7 @@ import aiohttp
 
 from motor_voz.brain import contexto as contexto_mod
 from motor_voz.brain import prompt as prompt_mod
+from motor_voz.brain.mensajes import Turno
 from motor_voz.brain.tenants.modelos import Tenant
 from motor_voz.brain.tools import registro
 from motor_voz.config import Config
@@ -67,14 +68,6 @@ _TIPOS_JSON: dict[Any, str] = {
     float: "number",
     bool: "boolean",
 }
-
-
-@dataclass(frozen=True)
-class Turno:
-    """Un mensaje ya guardado de la conversacion."""
-
-    rol: str
-    texto: str
 
 
 def armar_mensajes(

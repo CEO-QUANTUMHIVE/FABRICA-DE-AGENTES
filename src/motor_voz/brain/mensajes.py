@@ -66,6 +66,39 @@ class ResultadoIngreso:
 
 
 @dataclass(frozen=True)
+class Turno:
+    """Un mensaje ya guardado, como lo ve el cerebro.
+
+    `rol` usa el vocabulario de OpenAI (`user` / `assistant`) porque es lo que
+    espera cualquier LLM de texto. La direccion que guarda la base
+    (`entrante` / `saliente`) se traduce a esto al leerla.
+    """
+
+    rol: str
+    texto: str
+
+
+@dataclass(frozen=True)
+class EventoInbox:
+    """Un webhook pendiente de procesar, ya resuelto a tenant y conversacion."""
+
+    id: str
+    tenant_id: str
+    tenant_canal_id: str
+    conversacion_id: str | None
+    canal: str
+    evento_externo_id: str
+
+
+@dataclass(frozen=True)
+class ContextoConversacion:
+    """Lo que el procesador necesita saber para decidir si contesta."""
+
+    modo_atencion: str
+    turnos: tuple[Turno, ...]
+
+
+@dataclass(frozen=True)
 class Conversacion:
     id: str
     canal: str

@@ -26,7 +26,8 @@ from dataclasses import dataclass
 from typing import Any, Awaitable, Callable
 
 from motor_voz.brain import conversacion
-from motor_voz.brain.conversacion import Turno
+from motor_voz.brain.mensajes import ContextoConversacion, EventoInbox, Turno
+from motor_voz.brain.tenants import repositorio
 from motor_voz.config import Config
 
 logger = logging.getLogger(__name__)
@@ -50,24 +51,12 @@ chequeo decide si el agente le habla por encima a una persona.
 
 
 @dataclass(frozen=True)
-class EventoInbox:
-    id: str
-    tenant_id: str
-    tenant_canal_id: str
-    conversacion_id: str | None
-    canal: str
-    evento_externo_id: str
-
-
-@dataclass(frozen=True)
-class ContextoConversacion:
-    modo_atencion: str
-    turnos: tuple[Turno, ...]
-
-
-@dataclass(frozen=True)
 class Dependencias:
-    """Todo lo que toca la base entra por aca, para poder probar sin Supabase."""
+    """Todo lo que toca la base entra por aca, para poder probar sin Supabase.
+
+    `de_produccion()` las cablea al repositorio real. Los tests pasan dobles y
+    la suite sigue sin depender de que Supabase este arriba.
+    """
 
     tomar: Callable[..., Awaitable[list[EventoInbox]]]
     cerrar: Callable[..., Awaitable[str]]
@@ -75,6 +64,16 @@ class Dependencias:
     contexto_de: Callable[..., Awaitable[ContextoConversacion]]
     encolar: Callable[..., Awaitable[bool]]
     responder: Callable[..., Awaitable[str]] = conversacion.responder
+
+    @classmethod
+    def de_produccion(cls) -> Dependencias:
+        return cls(
+            tomar=repositorio.tomar_eventos_inbox,
+            cerrar=repositorio.cerrar_evento_inbox,
+            tenant_de_id=repositorio.tenant_por_id,
+            contexto_de=repositorio.contexto_de_conversacion,
+            encolar=repositorio.encolar_respuesta,
+        )
 
 
 async def procesar_pendientes(

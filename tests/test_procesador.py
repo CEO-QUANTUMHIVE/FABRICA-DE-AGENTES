@@ -10,6 +10,7 @@ from __future__ import annotations
 import pytest
 
 from motor_voz import config as config_mod
+from motor_voz.brain import conversacion as conversacion_mod
 from motor_voz.brain.conversacion import Turno
 from motor_voz.brain.tenants.modelos import PerfilTenant, Servicio, Tenant
 from motor_voz.channels import procesador
@@ -230,6 +231,30 @@ async def test_procesa_todo_el_lote_y_devuelve_cuantos(config):
 
     assert procesados == 3
     assert len(repo.encolados) == 3
+
+
+def test_las_dependencias_reales_existen_y_apuntan_al_repositorio():
+    """Todo lo de arriba usa dobles. Sin esto, un nombre mal escrito en
+    `de_produccion()` recien se descubre con un mensaje real perdido."""
+    from motor_voz.brain.tenants import repositorio
+
+    deps = procesador.Dependencias.de_produccion()
+
+    assert deps.tomar is repositorio.tomar_eventos_inbox
+    assert deps.cerrar is repositorio.cerrar_evento_inbox
+    assert deps.tenant_de_id is repositorio.tenant_por_id
+    assert deps.contexto_de is repositorio.contexto_de_conversacion
+    assert deps.encolar is repositorio.encolar_respuesta
+    assert deps.responder is conversacion_mod.responder
+
+
+def test_la_base_y_el_cerebro_hablan_del_mismo_turno():
+    """Si `Turno` se duplicara, el repositorio devolveria uno y
+    `armar_mensajes` esperaria el otro, y el historial saldria vacio."""
+    from motor_voz.brain import mensajes
+
+    assert conversacion_mod.Turno is mensajes.Turno
+    assert procesador.EventoInbox is mensajes.EventoInbox
 
 
 async def test_sin_nada_pendiente_no_hace_nada(config):
