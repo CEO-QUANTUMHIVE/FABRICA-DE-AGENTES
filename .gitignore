@@ -84,3 +84,6 @@ token.txt
 # Grafo de conocimiento: se regenera solo en cada commit, no se versiona.
 # Consultalo con `graphify query "..."` antes de releer el repo entero.
 graphify-out/
+
+# Estado local del CLI de Supabase, no del proyecto
+supabase/.temp/
