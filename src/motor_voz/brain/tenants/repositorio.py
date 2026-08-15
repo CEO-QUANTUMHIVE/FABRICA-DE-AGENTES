@@ -370,6 +370,62 @@ async def encolar_respuesta(
     return bool(respuesta.data)
 
 
+async def es_operador(config: Config, usuario_id: str) -> bool:
+    """Si este usuario puede dar de alta negocios.
+
+    Ser cliente de la plataforma y ser quien la opera son dos cosas distintas.
+    Por eso es una lista explicita y no "el dueño de QuantumHive": el dia que
+    QuantumHive tenga un empleado con acceso al panel, ese empleado no tiene
+    que poder crear negocios.
+    """
+    cliente = await _cliente(config)
+    respuesta = (
+        await cliente.table("plataforma_operadores")
+        .select("usuario_id")
+        .eq("usuario_id", usuario_id)
+        .maybe_single()
+        .execute()
+    )
+    return bool(respuesta is not None and respuesta.data)
+
+
+async def crear_negocio_borrador(
+    config: Config,
+    *,
+    operador_id: str,
+    slug: str,
+    nombre: str,
+    perfil_slug: str,
+    prompt_propio: str = "",
+    dominio: str = "",
+    email_dueno: str = "",
+) -> dict:
+    """Da de alta un negocio EN BORRADOR. No existe para nadie hasta que se paga."""
+    cliente = await _cliente(config)
+    respuesta = await cliente.rpc(
+        "crear_negocio_borrador",
+        {
+            "p_operador_id": operador_id,
+            "p_slug": slug,
+            "p_nombre": nombre,
+            "p_perfil_slug": perfil_slug,
+            "p_prompt_propio": prompt_propio,
+            "p_dominio": dominio,
+            "p_email_dueno": email_dueno,
+        },
+    ).execute()
+    return respuesta.data or {}
+
+
+async def activar_negocio(config: Config, *, operador_id: str, slug: str) -> dict:
+    """Lo que pasa cuando el cliente paga. Activar dos veces no rompe."""
+    cliente = await _cliente(config)
+    respuesta = await cliente.rpc(
+        "activar_negocio", {"p_operador_id": operador_id, "p_slug": slug}
+    ).execute()
+    return respuesta.data or {}
+
+
 async def puede_responder(
     config: Config, *, tenant_id: str, conversacion_id: str
 ) -> Permiso:

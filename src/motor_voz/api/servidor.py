@@ -49,6 +49,9 @@ ConocimientoParaPanel = Callable[[Config, str], Awaitable[list[dict]]]
 OperacionPanel = Callable[..., Awaitable[dict]]
 CanalDeCuenta = Callable[..., Awaitable[CanalTenant]]
 RegistrarMensajeEntrante = Callable[..., Awaitable[ResultadoIngreso]]
+EsOperador = Callable[[Config, str], Awaitable[bool]]
+CrearNegocio = Callable[..., Awaitable[dict]]
+ActivarNegocio = Callable[..., Awaitable[dict]]
 
 CATEGORIAS_CONOCIMIENTO = frozenset(
     {"horario", "precio", "servicio", "politica", "faq", "tono", "otro"}
@@ -441,6 +444,97 @@ async def preflight(peticion: web.Request) -> web.Response:
     return _cors(web.Response(status=204))
 
 
+async def _operador_de_la_fabrica(peticion: web.Request) -> tuple[str | None, web.Response | None]:
+    """Exige sesion Y estar en la lista de operadores.
+
+    Tener sesion no alcanza: cualquier dueño de un negocio tiene una. Lo que
+    habilita a dar de alta es estar en `plataforma_operadores`.
+    """
+    usuario_id = await _usuario_del_panel(peticion)
+    if not usuario_id:
+        return None, _cors(web.json_response({"error": "Sesion requerida."}, status=401))
+
+    es_operador: EsOperador = peticion.app["es_operador"]
+    try:
+        autorizado = await es_operador(peticion.app["config"], usuario_id)
+    except Exception:
+        logger.exception("no se pudo verificar el operador")
+        return None, _cors(
+            web.json_response({"error": "No se pudo verificar tu permiso."}, status=503)
+        )
+
+    if not autorizado:
+        # Mismo cuerpo que un slug inexistente: distinguirlos le diria a quien
+        # prueba que la ruta existe y que le falta permiso.
+        logger.warning("alta de negocio rechazada | usuario=%s", usuario_id)
+        return None, _cors(web.json_response({"error": "No autorizado."}, status=403))
+
+    return usuario_id, None
+
+
+async def crear_negocio(peticion: web.Request) -> web.Response:
+    """Da de alta un negocio en borrador. El agente no existe hasta que se paga."""
+    operador_id, error = await _operador_de_la_fabrica(peticion)
+    if error is not None:
+        return error
+
+    try:
+        cuerpo = await peticion.json()
+    except Exception:
+        return _cors(web.json_response({"error": "Cuerpo invalido."}, status=400))
+
+    slug = str(cuerpo.get("slug") or "").strip().lower()
+    nombre = str(cuerpo.get("nombre") or "").strip()
+    perfil_slug = str(cuerpo.get("perfil") or "").strip()
+    if not slug or not nombre or not perfil_slug:
+        return _cors(
+            web.json_response(
+                {"error": "Hacen falta slug, nombre y perfil."}, status=400
+            )
+        )
+
+    funcion: CrearNegocio = peticion.app["crear_negocio_borrador"]
+    try:
+        resultado = await funcion(
+            peticion.app["config"],
+            operador_id=operador_id,
+            slug=slug,
+            nombre=nombre,
+            perfil_slug=perfil_slug,
+            prompt_propio=str(cuerpo.get("prompt") or ""),
+            dominio=str(cuerpo.get("dominio") or ""),
+            email_dueno=str(cuerpo.get("email_dueno") or ""),
+        )
+    except Exception as fallo:
+        # El motivo viene de la funcion de la base: slug repetido, perfil
+        # inexistente, formato invalido. Mostrarlo evita adivinar.
+        logger.exception("alta de negocio fallida | slug=%s", slug)
+        return _cors(web.json_response({"error": str(fallo)[:200]}, status=400))
+
+    logger.info("negocio dado de alta | slug=%s operador=%s", slug, operador_id)
+    return _cors(web.json_response({"negocio": resultado}, status=201))
+
+
+async def activar_negocio(peticion: web.Request) -> web.Response:
+    """Lo que se dispara cuando el cliente paga."""
+    operador_id, error = await _operador_de_la_fabrica(peticion)
+    if error is not None:
+        return error
+
+    slug = peticion.match_info["slug"]
+    funcion: ActivarNegocio = peticion.app["activar_negocio"]
+    try:
+        resultado = await funcion(
+            peticion.app["config"], operador_id=operador_id, slug=slug
+        )
+    except Exception as fallo:
+        logger.exception("activacion fallida | slug=%s", slug)
+        return _cors(web.json_response({"error": str(fallo)[:200]}, status=400))
+
+    logger.info("negocio activado | slug=%s operador=%s", slug, operador_id)
+    return _cors(web.json_response({"negocio": resultado}))
+
+
 async def verificar_webhook_whatsapp(pedido: web.Request) -> web.Response:
     """El GET que Meta hace una sola vez al dar de alta el webhook.
 
@@ -530,6 +624,9 @@ def crear_app(
     publicar_version_conocimiento: OperacionPanel | None = None,
     canal_de_cuenta: CanalDeCuenta | None = None,
     registrar_mensaje_entrante: RegistrarMensajeEntrante | None = None,
+    es_operador: EsOperador | None = None,
+    crear_negocio_borrador: CrearNegocio | None = None,
+    activar_negocio_fn: ActivarNegocio | None = None,
 ) -> web.Application:
     cfg = config or cargar()
 
@@ -563,6 +660,11 @@ def crear_app(
     app["publicar_version_conocimiento"] = (
         publicar_version_conocimiento or repositorio.publicar_version_conocimiento
     )
+    app["es_operador"] = es_operador or repositorio.es_operador
+    app["crear_negocio_borrador"] = (
+        crear_negocio_borrador or repositorio.crear_negocio_borrador
+    )
+    app["activar_negocio"] = activar_negocio_fn or repositorio.activar_negocio
     app["canal_de_cuenta"] = canal_de_cuenta or repositorio.canal_de_cuenta
     app["registrar_mensaje_entrante"] = (
         registrar_mensaje_entrante or repositorio.registrar_mensaje_entrante
@@ -590,6 +692,10 @@ def crear_app(
                 "/api/panel/{tenant_slug}/conocimiento/{version_id}/publicar",
                 publicar_version_del_panel,
             ),
+            # La fabrica. Detras de sesion Y de la lista de operadores: un
+            # dueño de negocio tiene sesion y no puede dar de alta a nadie.
+            web.post("/api/fabrica/negocios", crear_negocio),
+            web.post("/api/fabrica/negocios/{slug}/activar", activar_negocio),
             # Fuera de /api/ a proposito: no lo llama un navegador, no lleva
             # CORS y no comparte los limites por IP con la demo.
             web.get("/webhooks/whatsapp", verificar_webhook_whatsapp),
