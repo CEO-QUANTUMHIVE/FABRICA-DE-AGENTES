@@ -422,9 +422,16 @@ Sin sesión, token roto o usuario de otro negocio, firma `modo=publico`.
 El worker ya quitó la constante global: lee el modo de la metadata firmada y
 también falla cerrado. El cuerpo del pedido nunca puede elegirlo.
 
-**Gate abierto:** `tenant_usuarios` está vacío. Falta crear el usuario dueño de
-QuantumHive con los datos reales y ejecutar la prueba E2E propia/cruzada. No se
-declara autenticación cerrada ni se abre el panel hasta pasarla.
+**Gate: el dueño ya existe (2026-08-15).** `ceo@quantumhive.com.ar`
+(`f39393b7-e673-44cd-a045-ba3d73b21981`) está en `tenant_usuarios` como dueño de
+QuantumHive, con email confirmado e identidad de email con contraseña.
+`frontend/panel/.env.local` está armado con la clave publishable, verificada
+contra Supabase real. **Falta la prueba E2E: entrar una vez, y el cruzado.**
+
+> **Trampa al diagnosticar usuarios:** `auth.admin.list_users()` devuelve
+> `identities: []` para todos, siempre. No significa que no tengan contraseña.
+> Para saberlo hay que pedir el usuario de a uno con `get_user_by_id`. Costó
+> mandar a Sergio a recrear un usuario que ya estaba bien.
 
 También quedó fijado el contrato de Web, WhatsApp, Instagram y Facebook en
 `brain/mensajes.py`. Los adaptadores reales todavía no están conectados; el
@@ -647,8 +654,9 @@ Cada una tiene un test que la cubre. **No las repitas.**
   un cliente conserve su número **y** su app de WhatsApp Business. Sin esto,
   Jaz no se puede conectar sin perder su app. No bloquea el desarrollo del
   canal, así que conviene que corra en paralelo desde ya
-- **Recrear el usuario `ceo@quantumhive.com.ar`** con contraseña y Auto Confirm
-  User, y pasar el UUID nuevo para revincularlo (ver §3.12)
+- ~~Recrear el usuario `ceo@quantumhive.com.ar`~~ — **hecho el 2026-08-15.**
+  Creado, confirmado, con contraseña y vinculado al tenant. Falta entrar una
+  vez al panel para cerrar el gate E2E
 - **Elegir proveedor de SMTP** para los mails de invitación del panel. El de
   Supabase por defecto solo le escribe a miembros del equipo y manda 2 por hora:
   no sirve ni para la primera clienta
