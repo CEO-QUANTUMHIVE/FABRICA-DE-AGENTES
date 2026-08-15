@@ -99,6 +99,29 @@ class ContextoConversacion:
 
 
 @dataclass(frozen=True)
+class EventoOutbox:
+    """Una respuesta lista para mandar al proveedor."""
+
+    id: str
+    tenant_id: str
+    tenant_canal_id: str
+    conversacion_id: str
+    canal: str
+    clave_idempotencia: str
+    payload: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class DestinoEnvio:
+    """A quien y desde donde se manda, resuelto en una sola consulta."""
+
+    cuenta_externa_id: str
+    secreto_ref: str
+    contacto_externo_id: str
+    estado_canal: str
+
+
+@dataclass(frozen=True)
 class Conversacion:
     id: str
     canal: str

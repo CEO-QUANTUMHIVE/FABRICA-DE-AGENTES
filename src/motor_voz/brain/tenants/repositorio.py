@@ -22,7 +22,9 @@ from motor_voz.brain.mensajes import (
     CanalTenant,
     ContextoConversacion,
     Conversacion,
+    DestinoEnvio,
     EventoInbox,
+    EventoOutbox,
     MensajeEntrante,
     MensajeGuardado,
     ResultadoIngreso,
@@ -365,6 +367,127 @@ async def encolar_respuesta(
         .execute()
     )
     return bool(respuesta.data)
+
+
+async def tomar_eventos_outbox(
+    config: Config, *, limite: int = 10, bloqueo_segundos: int = 60
+) -> list[EventoOutbox]:
+    """Espejo de `tomar_eventos_inbox`. Aca el duplicado le llega al cliente."""
+    cliente = await _cliente(config)
+    respuesta = await cliente.rpc(
+        "tomar_eventos_outbox",
+        {
+            "p_limite": max(1, min(limite, 100)),
+            "p_bloqueo_segundos": max(10, bloqueo_segundos),
+        },
+    ).execute()
+    return [
+        EventoOutbox(
+            id=fila["id"],
+            tenant_id=fila["tenant_id"],
+            tenant_canal_id=fila["tenant_canal_id"],
+            conversacion_id=fila["conversacion_id"],
+            canal=fila["canal"],
+            clave_idempotencia=fila["clave_idempotencia"],
+            payload=fila.get("payload") or {},
+        )
+        for fila in (respuesta.data or [])
+    ]
+
+
+async def cerrar_evento_outbox(
+    config: Config,
+    *,
+    evento_id: str,
+    ok: bool,
+    error: str = "",
+    reintentable: bool = True,
+) -> str:
+    """Cierra un envio. `reintentable=False` lo descarta sin gastar intentos."""
+    cliente = await _cliente(config)
+    respuesta = await cliente.rpc(
+        "cerrar_evento_outbox",
+        {
+            "p_id": evento_id,
+            "p_ok": ok,
+            "p_error": (error or "")[:500],
+            "p_reintentable": reintentable,
+        },
+    ).execute()
+    return respuesta.data or ""
+
+
+async def destino_de_envio(
+    config: Config, *, tenant_id: str, tenant_canal_id: str, conversacion_id: str
+) -> DestinoEnvio:
+    """Desde que cuenta y a quien, en una sola consulta.
+
+    Va con join y no con tres consultas sueltas porque las tres tendrian que
+    filtrar por tenant y alcanza con olvidarse en una para cruzar negocios.
+    """
+    cliente = await _cliente(config)
+    respuesta = (
+        await cliente.table("conversaciones")
+        .select(
+            "contacto_externo_id, "
+            "tenant_canales!inner(cuenta_externa_id, secreto_ref, estado)"
+        )
+        .eq("tenant_id", tenant_id)
+        .eq("id", conversacion_id)
+        .eq("tenant_canal_id", tenant_canal_id)
+        .maybe_single()
+        .execute()
+    )
+    if respuesta is None or respuesta.data is None:
+        raise ConversacionNoEncontrada(
+            f"No hay conversacion '{conversacion_id}' en ese tenant y canal"
+        )
+    datos = respuesta.data
+    canal = datos["tenant_canales"]
+    return DestinoEnvio(
+        cuenta_externa_id=canal["cuenta_externa_id"],
+        secreto_ref=canal.get("secreto_ref") or "",
+        contacto_externo_id=datos["contacto_externo_id"],
+        estado_canal=canal["estado"],
+    )
+
+
+async def registrar_mensaje_saliente(
+    config: Config,
+    *,
+    tenant_id: str,
+    tenant_canal_id: str,
+    conversacion_id: str,
+    canal: str,
+    mensaje_externo_id: str,
+    texto: str,
+) -> None:
+    """Guarda lo que contesto el agente, para el historial y el panel.
+
+    Sin esto el proximo turno no ve lo que ya dijo y se repite. Es idempotente
+    por `(tenant_canal_id, mensaje_externo_id)`: reenviar el mismo id no
+    duplica la fila.
+    """
+    cliente = await _cliente(config)
+    await (
+        cliente.table("mensajes")
+        .upsert(
+            {
+                "tenant_id": tenant_id,
+                "tenant_canal_id": tenant_canal_id,
+                "conversacion_id": conversacion_id,
+                "canal": canal,
+                "mensaje_externo_id": mensaje_externo_id,
+                "direccion": "saliente",
+                "texto": texto,
+                "estado": "enviado",
+                "ocurrido_en": datetime.now(timezone.utc).isoformat(),
+            },
+            on_conflict="tenant_canal_id,mensaje_externo_id",
+            ignore_duplicates=True,
+        )
+        .execute()
+    )
 
 
 async def tenant_por_id(config: Config, tenant_id: str) -> Tenant:
