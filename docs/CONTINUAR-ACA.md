@@ -426,7 +426,28 @@ también falla cerrado. El cuerpo del pedido nunca puede elegirlo.
 (`f39393b7-e673-44cd-a045-ba3d73b21981`) está en `tenant_usuarios` como dueño de
 QuantumHive, con email confirmado e identidad de email con contraseña.
 `frontend/panel/.env.local` está armado con la clave publishable, verificada
-contra Supabase real. **Falta la prueba E2E: entrar una vez, y el cruzado.**
+contra Supabase real.
+
+**Gate CERRADO el 2026-08-15**, probado contra la base real con una sesión
+emitida por la API de admin (enlace de un solo uso, sin tocar la contraseña):
+
+| Caso | |
+|---|---|
+| Sin sesión → `/api/panel/tenants` | ✅ 401 |
+| Token basura | ✅ 401 |
+| Sesión propia → `/api/panel/tenants` | ✅ 200, devuelve solo `quantumhive` |
+| Conocimiento propio | ✅ 200 |
+| **Conocimiento de `demo_capilar`** | ✅ **403** |
+
+Y la PWA levantada en local con esa sesión muestra el selector con **un solo
+negocio**, métricas en "esperando datos reales" y los cuatro canales con su
+estado. El aislamiento se ve también en la interfaz.
+
+> **Sin resolver:** el service worker no se registra en el panel de preview
+> (`Failed to register a ServiceWorker`). `/panel/sw.js` se sirve con HTTP 200
+> y el `manifest.webmanifest` también, y ese preview reescribe las URLs, así
+> que no se pudo distinguir bug real de limitación del entorno. **Verificar en
+> un navegador de verdad antes de prometer que la PWA se instala.**
 
 > **Trampa al diagnosticar usuarios:** `auth.admin.list_users()` devuelve
 > `identities: []` para todos, siempre. No significa que no tengan contraseña.
