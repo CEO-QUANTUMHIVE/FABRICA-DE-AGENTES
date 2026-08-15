@@ -373,8 +373,8 @@ el aislamiento a oído en local.
 
 Plan: [`2026-08-11-motor-voz-fase-9.md`](superpowers/plans/2026-08-11-motor-voz-fase-9.md).
 Resultado: [`fase9-tools.md`](resultados/fase9-tools.md).
-Las 6 tasks, migración `0006` aplicada. **252 tests en verde** más 2 de
-integración.
+Las 6 tasks, migración `0006` aplicada. La suite completa hoy tiene **286 tests
+en verde** más 8 controles de integración.
 
 El agente pasó de solo saber cosas a poder hacerlas:
 
@@ -410,21 +410,101 @@ corresponde y no invente. Lo de arriba prueba el aislamiento por código.
 
 ---
 
-### 3.8 Autenticación ← LO SIGUIENTE, Y VA ANTES DEL PANEL
+### 3.8 Autenticación 🟡 CÓDIGO Y BASE LISTOS (2026-08-13)
 
-**Hoy no hay login de ningún tipo.** `POST /api/token` no le pide identidad a
-nadie. El aislamiento por dominio alcanza para el modo público, pero el
-interno da acceso a los leads y las métricas de un negocio.
+Resultado: [`docs/resultados/autenticacion-y-base-multicanal.md`](resultados/autenticacion-y-base-multicanal.md).
 
-Por eso `MODO_DE_LA_SESION` en `voice/agente.py` está **fijo en `publico`**, y
-no leído de la sala ni del token: se dejó fijo a propósito para que nadie lo
-confunda con algo que ya funciona. Cuando exista login, sale de la metadata
-firmada del token — nunca de algo que mande el navegador.
+La migración `20260813214636_autenticacion_panel.sql` está aplicada. Supabase
+Auth valida el JWT y `tenant_usuarios` exige que el usuario pertenezca al
+tenant resuelto por el dominio. Solo entonces la API firma `modo=interno`.
+Sin sesión, token roto o usuario de otro negocio, firma `modo=publico`.
 
-**Si el panel de control sale antes que esto, sale con la puerta abierta.**
+El worker ya quitó la constante global: lee el modo de la metadata firmada y
+también falla cerrado. El cuerpo del pedido nunca puede elegirlo.
 
-Después viene la Fase 10 (límites de gasto, kill-switch, degradación, eventos
-hacia Quantum Core) y la fábrica de agentes.
+**Gate abierto:** `tenant_usuarios` está vacío. Falta crear el usuario dueño de
+QuantumHive con los datos reales y ejecutar la prueba E2E propia/cruzada. No se
+declara autenticación cerrada ni se abre el panel hasta pasarla.
+
+También quedó fijado el contrato de Web, WhatsApp, Instagram y Facebook en
+`brain/mensajes.py`. Los adaptadores reales todavía no están conectados; el
+plan está en `docs/superpowers/plans/2026-08-13-arquitectura-multicanal.md`.
+
+Después siguen sesiones/mensajes, memoria, límites de gasto/kill-switch y el
+primer adaptador de texto (WhatsApp).
+
+### 3.9 Persistencia multicanal ✅ BASE APLICADA (2026-08-13)
+
+Resultado: [`docs/resultados/persistencia-multicanal.md`](resultados/persistencia-multicanal.md).
+
+Ya existen en Supabase `tenant_canales`, `conversaciones`, `mensajes`,
+`eventos_inbox` y `eventos_outbox`. El ingreso de un mensaje es atómico e
+idempotente: si Meta reintenta un webhook no genera otra respuesta. Las claves
+foráneas compuestas impiden cruzar tenant, canal y conversación incluso si el
+backend se equivoca usando `service_role`.
+
+Probado contra la base real con QuantumHive y `demo_capilar`: dos controles
+nuevos en verde, incluyendo reintento y cruce deliberado de tenant.
+
+El panel solicitado queda especificado en
+[`docs/superpowers/plans/2026-08-13-panel-de-control.md`](superpowers/plans/2026-08-13-panel-de-control.md):
+Métricas, Memorias, Chat con mi agente y Entrenamiento versionado.
+
+**Siguiente:** procesador de inbox/outbox y adaptador WhatsApp de texto. En
+paralelo, conocimiento versionado para horarios, precios, servicios y FAQ.
+
+### 3.10 Conocimiento versionado ✅ APLICADO (2026-08-13)
+
+Resultado: [`docs/resultados/conocimiento-versionado.md`](resultados/conocimiento-versionado.md).
+
+Horarios, precios, servicios, políticas, FAQ y tono ya pueden existir como
+piezas versionadas. Un borrador no modifica al agente. Publicar cambia la
+versión activa; restaurar vuelve a una histórica sin borrar auditoría.
+
+El repositorio carga únicamente versiones publicadas y `construir_contexto()`
+las incorpora al mismo agente para Web, WhatsApp, Instagram y Facebook.
+
+Probado contra Supabase real: borrador, publicación, segunda versión, rollback,
+aislamiento de lectura y rechazo de publicación cruzada.
+
+La API autenticada para listar, editar, publicar y restaurar ya está terminada
+en el bloque siguiente. La vista previa quedará en la PWA usando borradores.
+
+### 3.11 API autenticada del panel ✅ LISTA (2026-08-13)
+
+Resultado: [`docs/resultados/api-autenticada-panel.md`](resultados/api-autenticada-panel.md).
+
+Ya están disponibles el listado de negocios del usuario, el historial de
+conocimiento, la creación de borradores y la publicación/rollback. Cada ruta
+valida JWT y membresía exacta en `tenant_usuarios`; cualquier `tenant_id`
+enviado por el navegador se ignora.
+
+Verificado con **286 tests locales en verde**, incluidos `401`, `403`, cruce
+deliberado de tenant, borradores inválidos y publicación segura.
+
+**Siguiente paso:** base visual responsive de la PWA y conexión del login real
+cuando se dé de alta el dueño de `tenant_001` QuantumHive.
+
+### 3.12 Base PWA del panel ✅ LISTA (2026-08-13)
+
+Resultado: [`docs/resultados/pwa-panel-base.md`](resultados/pwa-panel-base.md).
+
+`frontend/panel` ya contiene una sola aplicación instalable para Windows,
+macOS, Android y iPhone. Su navegación fue simplificada a Inicio, Enseñar, Mi
+negocio y Conexiones. Enseñar es una charla con el agente, incluye modo de
+prueba como cliente y separa Probar cambios de Aplicar cambios.
+
+Mi negocio tiene una planilla para productos, servicios y precios. Conexiones
+es un catálogo buscable y ampliable de integraciones/MCP, con categorías,
+estado conectado, calendarios, ventas, mensajería, productividad, CRM y MCP
+personalizado sujeto a revisión. Cada conexión se habilita por tenant.
+
+Entrenamiento ya consume la API para guardar borradores y publicar versiones.
+Compila en producción y fue verificada visualmente en escritorio, 390×844 y
+360×560, sin errores de navegador ni desborde horizontal.
+
+**Siguiente:** alta del dueño real de QuantumHive + login E2E; después, chat
+interno sobre el mismo agente.
 
 ---
 

@@ -66,7 +66,7 @@ create table tenant_usuarios (
 create index tenant_usuarios_tenant_idx on tenant_usuarios(tenant_id);
 ```
 
-- [ ] Aplicar con el pooler (`aws-1-us-west-2`, ver el runbook).
+- [x] Aplicada con el pooler (`aws-1-us-west-2`) el 2026-08-13, con RLS habilitado.
 - [ ] Crear a mano un usuario para `quantumhive` y probar el login.
 
 ---
@@ -75,7 +75,7 @@ create index tenant_usuarios_tenant_idx on tenant_usuarios(tenant_id);
 
 **Files:** `api/servidor.py`, `brain/tenants/repositorio.py`, `tests/test_api.py`
 
-- [ ] **Test primero.** Los cuatro que importan:
+- [x] **Test primero.** Los cuatro que importan:
 
 ```python
 async def test_sin_sesion_el_modo_es_publico(...)
@@ -87,10 +87,10 @@ async def test_un_token_de_sesion_invalido_no_rompe_da_publico(...)
 El segundo es el que importa: **tener sesión no alcanza, tiene que ser sesión
 de *ese* negocio.** Si no, cualquier cliente ve los leads de cualquier otro.
 
-- [ ] **En `repositorio.py`:** `tenant_del_usuario(config, usuario_id, tenant_id) -> str | None`
+- [x] **En `repositorio.py`:** validación de JWT y rol filtrado por usuario + tenant.
       que devuelve el rol o `None`. Con su `.eq()` por los dos campos.
 
-- [ ] **En `emitir_token`:** leer `Authorization: Bearer <jwt de Supabase>`.
+- [x] **En `emitir_token`:** leer `Authorization: Bearer <jwt de Supabase>`.
 
 ```python
 # El modo NO sale de lo que pida el navegador. Sale de verificar la sesion
@@ -103,7 +103,7 @@ if jwt:
         modo = "interno"
 ```
 
-- [ ] Meter `modo` en la metadata firmada del token, al lado de `tenant`.
+- [x] Meter `modo` en la metadata firmada del token, al lado de `tenant`.
 
 **No inventes la verificación del JWT.** Supabase la hace: `auth.get_user(jwt)`
 del cliente ya instalado.
@@ -114,11 +114,11 @@ del cliente ya instalado.
 
 **Files:** `voice/agente.py`, `tests/test_herramientas.py`
 
-- [ ] Sacar la constante `MODO_DE_LA_SESION` y leer el modo de la metadata del
+- [x] Sacar la constante `MODO_DE_LA_SESION` y leer el modo de la metadata del
       participante (`await ctx.wait_for_participant()`, campo `.metadata`).
-- [ ] **Default `publico` si no viene o no se entiende.** `registry_de` ya
+- [x] **Default `publico` si no viene o no se entiende.** `registry_de` ya
       falla cerrado, pero que el default esté también acá.
-- [ ] Test: un participante sin metadata, o con metadata rota, recibe las 4
+- [x] Test: un participante sin metadata, o con metadata rota, recibe las 4
       tools públicas y ninguna interna.
 
 ---

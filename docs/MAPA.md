@@ -117,16 +117,19 @@ el `modo` (público/interno) decide qué **puede hacer**, no solo qué dice.
 | Tools y registries (Fase 9) | ✅ código y base, falta oído |
 | Widget en la landing | ✅ |
 | Repo aislado del motor | ✅ |
-| **Autenticación** | ❌ **no existe** |
+| **Autenticación** | 🟡 migración y código listos; falta alta del dueño y prueba E2E real |
 | Camino de escritura (`crear_tenant`) | ❌ los tenants nacen de SQL a mano |
-| Sesiones y turnos guardados | ❌ |
+| Conversaciones, mensajes e inbox/outbox | ✅ base durable aplicada y aislada |
+| Conocimiento versionado | ✅ borrador, publicación y rollback aplicados |
+| Sesiones de voz y turnos | ❌ |
 | Memoria de los agentes | ❌ depende de lo anterior |
 | Límites de gasto / kill-switch (Fase 10) | ❌ |
 | La fábrica: pipeline + pantalla | ❌ |
-| WhatsApp y redes | ❌ |
-| Panel de control | ❌ |
+| Contrato multicanal | ✅ Web, WhatsApp, Instagram y Facebook comparten `brain/` |
+| Adaptadores WhatsApp / Instagram / Facebook | ❌ faltan conexiones reales |
+| Panel de control | 🟡 base PWA + API de entrenamiento listas; falta login E2E y módulos reales de chat/memorias/métricas |
 
-**252 tests en verde**, más 2 de integración y 4 de humo contra APIs reales.
+**286 tests en verde**, más 8 controles de integración y los humos contra APIs reales.
 
 ---
 
@@ -145,9 +148,9 @@ flowchart LR
 
 **Lo que se crea antes de pagar es un BORRADOR, no un agente vivo.**
 
-Eso ya está medio resuelto: `tenants.estado` existe y `obtener_tenant` **ya
-filtra `estado = 'activo'`**, así que un borrador es inalcanzable por diseño.
-Falta agregar `'borrador'` a los valores permitidos.
+Esto ya está resuelto: la migración `0008` permite `borrador` y
+`obtener_tenant` **filtra `estado = 'activo'`**, así que un borrador es
+inalcanzable por diseño.
 
 Sin esa separación pasan tres cosas: cada entrevista cuesta plata y alguien
 puede darle sin parar; si arrancan 100 y pagan 3 quedan 97 agentes muertos; y
@@ -172,17 +175,19 @@ cliente ve al agente entrar a su Instagram mientras conversan.
 
 **No es orden de ganas: cada uno destraba al siguiente.**
 
-1. **Autenticación** — solo para el panel. Bloquea todo lo de abajo.
-2. **Borrador vs activo** — una línea de migración.
-3. **Camino de escritura** (`crear_tenant`, `guardar_prompt`) — para que el
+1. **Cerrar autenticación E2E** — alta del dueño y prueba cruzada real.
+2. **Camino de escritura** (`crear_tenant`, `guardar_prompt`) — para que el
    pipeline pueda crear el borrador.
+3. ✅ **API autenticada del panel (primer bloque)** — conocimiento versionado sin exponer secretos.
 4. **Sesiones y turnos** — de acá dependen la memoria, las métricas del modo
    interno y el "entrenar agente".
 5. **Memoria** — depende de 4.
 6. **Límites de gasto y kill-switch** (Fase 10) — protege la billetera.
-7. **La fábrica**: pipeline + pantalla. Depende de 1 y 3.
-8. **Redes** — parte de la ingesta de la fábrica.
-9. **Panel de control**, con la sección de conexiones.
+7. **La fábrica**: pipeline + pantalla. Depende de 1 y 2.
+8. **Adaptador WhatsApp** — sobre sesiones, memoria y outbox comunes.
+9. **Instagram y Facebook** — adaptadores separados sobre el mismo contrato.
+10. **Redes como ingesta** de la fábrica.
+11. ✅ **Base PWA del panel** — responsive, instalable y conectada a entrenamiento.
 
 **WhatsApp es el único independiente**: reusa `brain/` tal cual y se puede
 hacer en cualquier momento, incluso en paralelo.
