@@ -26,7 +26,8 @@ from livekit import api
 
 from motor_voz.api import niveles as catalogo_niveles
 from motor_voz.api.limites import LimiteAlcanzado, Limitador
-from motor_voz.brain.mensajes import CanalTenant, ResultadoIngreso
+from motor_voz.brain import conversacion as cerebro_texto
+from motor_voz.brain.mensajes import CanalTenant, ResultadoIngreso, Turno
 from motor_voz.brain.tenants import repositorio
 from motor_voz.brain.tenants.modelos import Tenant
 from motor_voz.channels.whatsapp import firma as firma_whatsapp
@@ -52,6 +53,7 @@ RegistrarMensajeEntrante = Callable[..., Awaitable[ResultadoIngreso]]
 EsOperador = Callable[[Config, str], Awaitable[bool]]
 CrearNegocio = Callable[..., Awaitable[dict]]
 ActivarNegocio = Callable[..., Awaitable[dict]]
+Responder = Callable[..., Awaitable[str]]
 
 CATEGORIAS_CONOCIMIENTO = frozenset(
     {"horario", "precio", "servicio", "politica", "faq", "tono", "otro"}
@@ -444,6 +446,68 @@ async def preflight(peticion: web.Request) -> web.Response:
     return _cors(web.Response(status=204))
 
 
+MAX_TEXTO_CHAT = 2000
+MAX_TURNOS_CHAT = 20
+
+
+async def chatear_con_el_agente(peticion: web.Request) -> web.Response:
+    """Hablar con el propio agente desde el panel, con el cerebro de verdad.
+
+    Dos modos, y la diferencia importa:
+
+        cliente   registry publico. Es lo que va a ver quien le escriba al
+                  negocio, sirve para probar antes de publicar.
+        dueño     registry interno. El dueño preguntandole por sus metricas.
+
+    El modo llega del cuerpo y eso es seguro: el registry interno solo abre
+    datos DE ESTE tenant, y la membresia ya se verifico. Lo que el cuerpo no
+    puede elegir nunca es el tenant.
+    """
+    usuario_id, tenant, _rol, error = await _contexto_del_panel(
+        peticion, peticion.match_info["tenant_slug"]
+    )
+    if error is not None:
+        return error
+
+    try:
+        cuerpo = await peticion.json()
+    except Exception:
+        return _cors(web.json_response({"error": "Cuerpo invalido."}, status=400))
+
+    texto = str(cuerpo.get("mensaje") or "").strip()
+    if not texto:
+        return _cors(web.json_response({"error": "Falta el mensaje."}, status=400))
+    if len(texto) > MAX_TEXTO_CHAT:
+        return _cors(web.json_response({"error": "Mensaje demasiado largo."}, status=400))
+
+    historial = []
+    for turno in (cuerpo.get("historial") or [])[-MAX_TURNOS_CHAT:]:
+        if not isinstance(turno, dict):
+            continue
+        rol = "assistant" if turno.get("rol") == "assistant" else "user"
+        historial.append(Turno(rol=rol, texto=str(turno.get("texto") or "")[:MAX_TEXTO_CHAT]))
+
+    modo = "interno" if cuerpo.get("modo") == "dueño" else "publico"
+    responder: Responder = peticion.app["responder"]
+    try:
+        respuesta = await responder(
+            peticion.app["config"],
+            tenant,
+            historial=tuple(historial),
+            texto=texto,
+            modo=modo,
+            canal="web",
+        )
+    except Exception:
+        logger.exception("chat del panel fallido | tenant=%s", tenant.slug)
+        return _cors(
+            web.json_response({"error": "El agente no pudo responder."}, status=503)
+        )
+
+    logger.info("chat del panel | tenant=%s modo=%s", tenant.slug, modo)
+    return _cors(web.json_response({"respuesta": respuesta, "modo": modo}))
+
+
 async def _operador_de_la_fabrica(peticion: web.Request) -> tuple[str | None, web.Response | None]:
     """Exige sesion Y estar en la lista de operadores.
 
@@ -627,6 +691,7 @@ def crear_app(
     es_operador: EsOperador | None = None,
     crear_negocio_borrador: CrearNegocio | None = None,
     activar_negocio_fn: ActivarNegocio | None = None,
+    responder: Responder | None = None,
 ) -> web.Application:
     cfg = config or cargar()
 
@@ -660,6 +725,7 @@ def crear_app(
     app["publicar_version_conocimiento"] = (
         publicar_version_conocimiento or repositorio.publicar_version_conocimiento
     )
+    app["responder"] = responder or cerebro_texto.responder
     app["es_operador"] = es_operador or repositorio.es_operador
     app["crear_negocio_borrador"] = (
         crear_negocio_borrador or repositorio.crear_negocio_borrador
@@ -694,6 +760,7 @@ def crear_app(
             ),
             # La fabrica. Detras de sesion Y de la lista de operadores: un
             # dueño de negocio tiene sesion y no puede dar de alta a nadie.
+            web.post("/api/panel/{tenant_slug}/chat", chatear_con_el_agente),
             web.post("/api/fabrica/negocios", crear_negocio),
             web.post("/api/fabrica/negocios/{slug}/activar", activar_negocio),
             # Fuera de /api/ a proposito: no lo llama un navegador, no lleva

@@ -549,22 +549,60 @@ function switchTrainingMode(mode) {
   state.trainingMessages.push({
     from: "agent",
     text: mode === "probar"
-      ? "Listo. Ahora hablame como si fueras un cliente. Voy a responder usando los cambios pendientes, sin modificar todavía al agente real."
+      ? "Listo. Hablame como si fueras un cliente y te contesta tu agente real, con la información de tu negocio."
       : "Volvimos a Enseñar. Decime qué querés que cambie de la respuesta que acabás de probar.",
   });
   renderShell();
 }
 
-function handleTrainingMessage(event) {
+async function handleTrainingMessage(event) {
   event.preventDefault();
   const input = new FormData(event.currentTarget).get("message").trim();
   if (!input) return;
   state.trainingMessages.push({ from: "user", text: input });
+
   if (state.trainingMode === "ensenar") {
+    // Enseñar sigue siendo local hasta que toques Aplicar: una corrección es
+    // un borrador, y un borrador no cambia al agente que está atendiendo.
     state.pendingChanges.push({ text: input, categoria: "tono" });
-    state.trainingMessages.push({ from: "agent", text: `Entendí. Voy a tomar como regla: “${input}”. La dejé pendiente para que la pruebes antes de aplicarla.` });
-  } else {
-    state.trainingMessages.push({ from: "agent", text: "Esta es una respuesta de prueba. Si algo no te gusta, volvé a Enseñar y decime exactamente qué palabra, tono o información querés corregir." });
+    state.trainingMessages.push({
+      from: "agent",
+      text: `Anotado: “${input}”. Queda pendiente — tocá Probar cambios para escucharlo, y recién Aplicar lo publica.`,
+    });
+    renderShell();
+    return;
+  }
+
+  // Modo cliente: habla el agente de verdad, con el conocimiento del negocio.
+  if (state.demo) {
+    state.trainingMessages.push({ from: "agent", text: "Vista de diseño: no hay agente real conectado." });
+    renderShell();
+    return;
+  }
+
+  state.trainingMessages.push({ from: "agent", text: "…", pending: true });
+  renderShell();
+
+  // El historial que ya se dijo, para que no se presente de nuevo en cada turno.
+  const historial = state.trainingMessages
+    .filter((m) => !m.pending)
+    .slice(-20)
+    .map((m) => ({ rol: m.from === "user" ? "user" : "assistant", texto: m.text }));
+
+  try {
+    const data = await api(`/api/panel/${encodeURIComponent(state.tenant.slug)}/chat`, {
+      method: "POST",
+      body: JSON.stringify({ mensaje: input, historial: historial.slice(0, -1), modo: "cliente" }),
+    });
+    state.trainingMessages.pop();
+    state.trainingMessages.push({ from: "agent", text: data.respuesta });
+  } catch (error) {
+    // Nunca un globo colgado: el "…" se reemplaza siempre, aunque falle.
+    state.trainingMessages.pop();
+    state.trainingMessages.push({
+      from: "agent",
+      text: `No pude responder: ${error.message}`,
+    });
   }
   renderShell();
 }
