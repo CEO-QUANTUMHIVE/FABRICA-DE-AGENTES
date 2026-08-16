@@ -1,5 +1,78 @@
 # Brief de continuación — Motor de Voz
 
+> ## ⚡ Estado al 2026-08-16 — leé esto primero
+>
+> **Todo lo de abajo sigue valiendo, pero esto es lo último y lo que manda.**
+>
+> ### Lo que quedó andando en producción
+>
+> | | |
+> |---|---|
+> | Login del panel | ✅ `quantumhive.com.ar/panel/`, gate E2E cerrado contra la base real |
+> | Chat real con el agente | ✅ `POST /api/panel/{slug}/chat`, probado en producción con Groq |
+> | Alta de negocios | ✅ `POST /api/fabrica/negocios` + `/activar` |
+> | Las 15 migraciones | ✅ **todas aplicadas**, verificadas en la base |
+> | API y agente | ✅ desplegados, `registered worker` |
+> | Landing + panel | ✅ revisión `landing-quantumhive-00040-xmc` |
+> | Canal WhatsApp | ✅ código completo: parser, firma, webhook, cerebro, colas, envío, worker, topes |
+> | Tests | ✅ **398 en verde** |
+>
+> ### Cómo se aplican migraciones ahora
+>
+> Con `SUPABASE_ACCESS_TOKEN` del `.env` contra la API de administración. **No
+> hace falta la contraseña de la base ni `supabase link`.** Ojo: hay que mandar
+> un `User-Agent`, si no Cloudflare devuelve 403 code 1010 antes de mirar el
+> token.
+>
+> ### El repo de la landing ya existe
+>
+> [`CEO-QUANTUMHIVE/pagina-web-landing-quantumhive`](https://github.com/CEO-QUANTUMHIVE/pagina-web-landing-quantumhive).
+> La carpeta local está en `C:\Users\sergio\Desktop\boveda obsidian\landing` y
+> vive **dentro del repo de la bóveda de Obsidian**, con 1266 archivos de otros
+> proyectos sin commitear: no se pushea desde ahí.
+>
+> ### 🔴 La corrección grande de este bloque
+>
+> **Ningún cliente cambia de número. Nunca.** Y hay camino para eso hoy, sin
+> esperar la verificación:
+>
+> - **La verificación estándar ni siquiera está disponible para cuentas de
+>   coexistencia.** Va *Partner-Led Business Verification*, que la hace el
+>   partner.
+> - O sea: **un BSP con coexistencia (360dialog, €49/mes fijo, sin recargo por
+>   mensaje) conecta el número de siempre esta semana.** El dueño escanea un QR
+>   desde su app de WhatsApp Business y listo: conserva número, app e historial.
+> - Requisito real que **falta**: completar los datos del portfolio de Meta
+>   (nombre legal, dirección, sitio, teléfono). Gratis y sin papeles.
+>
+> **Ir por un BSP no tira nada del código.** El grafo lo confirmó:
+> `enviar_texto` no tiene dependientes, se engancha en una sola línea
+> (`channels/enviador.py:52`). Cambian el cliente de envío y la validación de
+> firma; parser, cerebro, colas, límites y aislamiento quedan igual. Volver a
+> Meta directo el día que salga Tech Provider es cambiar esa línea al revés.
+>
+> ### Estado en Meta
+>
+> - Portfolio `QuantumHive` creado — `business_id 1079094061364956`, **sin
+>   verificar** y **con los datos del negocio vacíos**.
+> - App `quantumhive`: **sin confirmar** si se creó. Facebook tiró un checkpoint
+>   al automatizar el navegador. **No manejar Meta por automatización.**
+> - Sergio tiene **CUIT y monotributo**, así que puede verificar. 2-5 días.
+>
+> ### Lo próximo, en orden
+>
+> 1. Completar datos del portfolio de Meta (5 min, de Sergio).
+> 2. Onboarding de coexistencia en 360dialog con el número real.
+> 3. Escribir `channels/whatsapp/cliente_360.py` + su verificación de webhook.
+> 4. Regla de Caddy para `/webhooks/*` — hoy da 404 — y systemd del worker.
+> 5. Handoff: contestar desde el panel.
+>
+> ### Pendientes de seguridad
+>
+> - **Rotar la contraseña de la base de Supabase**: se pegó en el chat.
+> - El `SUPABASE_ACCESS_TOKEN` se mostró truncado en una terminal; regenerarlo
+>   si se quiere estar tranquilo.
+
 **Fecha:** 2026-08-09
 **Rama:** `arquitectura/spec-motor-voz` en `CEO-QUANTUMHIVE/FABRICA-DE-AGENTES`
 (se llamaba `MOTOR-DE-VOZ-` hasta el 2026-08-11; GitHub redirige el nombre
