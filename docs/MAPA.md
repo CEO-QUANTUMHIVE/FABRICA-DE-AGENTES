@@ -42,11 +42,12 @@ las trampas, no el código.
 ahí, no acá. El spec de este repo lo dice en su §1: *"no es un orquestador ni
 un reemplazo de Quantum Core"*.
 
-La interfaz privada de esa flecha es el **CEO departamental de Motor de Voz**:
+La interfaz privada de esa flecha es el **CEO departamental de Fábrica de Agentes**:
 QuantumCore descubre capacidades y entrega trabajos estructurados por `/v1`;
 el CEO valida alcance, tenant, worker, cerebro, herramientas y presupuesto
 antes de despachar. No acepta comandos libres y no replica las colas ni la
-auditoría durable de QuantumCore. Ver [`ceo-motor-de-voz.md`](ceo-motor-de-voz.md).
+auditoría durable de QuantumCore. Ver
+[`ceo-fabrica-de-agentes.md`](ceo-fabrica-de-agentes.md).
 
 ---
 

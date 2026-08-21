@@ -11,7 +11,7 @@ from aiohttp import web
 from motor_voz.brain.tenants import repositorio
 from motor_voz.brain.tenants.modelos import Tenant
 from motor_voz.ceo.departamento import (
-    CEODeMotorDeVoz,
+    CEODeFabricaDeAgentes,
     RegistroWorkers,
     consultar_ceo,
     describir_ceo,
@@ -153,6 +153,11 @@ async def consulta_ceo(peticion: web.Request) -> web.Response:
     tipo = cuerpo.get("tipo")
     if not isinstance(tipo, str):
         return _error("tipo_consulta_invalido", "Falta el tipo de consulta.", 422)
+    correlacion_id = cuerpo.get("correlacion_id")
+    if correlacion_id is not None and (
+        not isinstance(correlacion_id, str) or not correlacion_id.strip() or len(correlacion_id) > 500
+    ):
+        return _error("correlacion_invalida", "Correlación inválida.", 422)
 
     tenant_datos: Mapping[str, Any] | None = None
     slug = cuerpo.get("tenant")
@@ -178,6 +183,8 @@ async def consulta_ceo(peticion: web.Request) -> web.Response:
         )
     except ValueError as error:
         return _error(str(error), "Consulta no permitida por el contrato.", 422)
+    if correlacion_id is not None:
+        resultado["correlacion_id"] = correlacion_id
     return web.json_response(resultado)
 
 
@@ -202,7 +209,7 @@ async def accion_ceo(peticion: web.Request) -> web.Response:
         solicitud["auditoria"] = auditoria
         solicitud["tenant"] = tenant.slug
 
-    servicio: CEODeMotorDeVoz = peticion.app["ceo_motor_de_voz"]
+    servicio: CEODeFabricaDeAgentes = peticion.app["ceo_fabrica_de_agentes"]
     resultado = await servicio.accionar(solicitud)
     status = 200
     if resultado["estado"] == "rechazado":
@@ -229,14 +236,14 @@ def preparar_ceo(app: web.Application, registro: RegistroWorkers | None = None) 
         config.whatsapp_verify_token,
     )
     app["registro_workers_ceo"] = registro_real
-    app["ceo_motor_de_voz"] = CEODeMotorDeVoz(
+    app["ceo_fabrica_de_agentes"] = CEODeFabricaDeAgentes(
         registro_real, secretos=secretos_configurados
     )
 
 
 def rutas_ceo() -> list[web.RouteDef]:
     return [
-        web.get("/v1/departamentos/motor-de-voz/descripcion", descripcion_ceo),
+        web.get("/v1/departamentos/fabrica-de-agentes/descripcion", descripcion_ceo),
         web.post("/v1/consultas", consulta_ceo),
         web.post("/v1/acciones", accion_ceo),
     ]

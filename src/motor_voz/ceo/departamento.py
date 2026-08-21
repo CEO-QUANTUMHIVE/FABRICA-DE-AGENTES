@@ -1,4 +1,4 @@
-"""Contrato departamental de Motor de Voz.
+"""Contrato departamental de Fábrica de Agentes.
 
 Este modulo valida y despacha trabajos; no contiene un orquestador ni ejecuta
 comandos. QuantumCore conserva objetivos, presupuestos y auditoria durable. Un
@@ -20,10 +20,10 @@ from datetime import datetime, timezone
 from pathlib import PureWindowsPath
 from typing import Any
 
-logger = logging.getLogger("motor-voz.ceo")
+logger = logging.getLogger("fabrica-agentes.ceo")
 
-CODIGO_DEPARTAMENTO = "motor-de-voz"
-NOMBRE_DEPARTAMENTO = "Motor de Voz"
+CODIGO_DEPARTAMENTO = "fabrica-de-agentes"
+NOMBRE_DEPARTAMENTO = "Fábrica de Agentes"
 VERSION_CONTRATO = "1.0"
 ESTADO_DEPARTAMENTO = "activo"
 REPOSITORIO = r"C:\Users\sergio\Desktop\FABRICA-DE-AGENTES"
@@ -358,7 +358,7 @@ def consultar_ceo(
         raise ValueError("tipo_consulta_no_permitido")
     if tipo == "arquitectura":
         resultado: Any = {
-            "flujo": "Dominus -> QuantumCore -> CEO Motor de Voz -> worker autorizado",
+            "flujo": "Dominus -> QuantumCore -> CEO Fábrica de Agentes -> worker autorizado",
             "capas": {
                 "brain": "prompts, contexto, tools y repositorio de tenants; sin LiveKit",
                 "voice": "LiveKit, STT, TTS y motores de voz",
@@ -384,7 +384,7 @@ def consultar_ceo(
             "CLAUDE.md",
             "docs/MAPA.md",
             "docs/guia-de-prompts.md",
-            "docs/ceo-motor-de-voz.md",
+            "docs/ceo-fabrica-de-agentes.md",
         ]
     elif tipo == "comandos_prueba":
         resultado = [
@@ -409,7 +409,7 @@ def consultar_ceo(
     return {"tipo": tipo, "solo_lectura": True, "resultado": resultado}
 
 
-class CEODeMotorDeVoz:
+class CEODeFabricaDeAgentes:
     def __init__(
         self, registro: RegistroWorkers | None = None, *, secretos: tuple[str, ...] = ()
     ) -> None:

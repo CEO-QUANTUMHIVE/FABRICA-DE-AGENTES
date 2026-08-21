@@ -1,5 +1,10 @@
 # CEO departamental de Motor de Voz
 
+> Documento histórico: este contrato pertenecía a la identificación errónea
+> del checkout como `motor-de-voz`. El contrato vigente de este repositorio es
+> [`ceo-fabrica-de-agentes.md`](ceo-fabrica-de-agentes.md). El departamento
+> `motor-de-voz` permanece separado y apunta a `SOLO-MOTOR-DE-VOZ-`.
+
 ## Propósito y frontera
 
 El CEO es la interfaz privada por la que QuantumCore puede descubrir este

@@ -1,4 +1,4 @@
-"""Contrato y defensas del CEO departamental de Motor de Voz."""
+"""Contrato y defensas del CEO departamental de Fábrica de Agentes."""
 
 from __future__ import annotations
 
@@ -74,7 +74,7 @@ def _solicitud(**cambios):
     base = {
         "trabajo_id": "trabajo-001",
         "clave_idempotencia": "idem-001",
-        "departamento": "motor-de-voz",
+        "departamento": "fabrica-de-agentes",
         "repositorio": REPOSITORIO,
         "tipo_trabajo": "implementar_codigo",
         "titulo": "Agregar una prueba segura",
@@ -116,12 +116,12 @@ class TestDescripcionYConsultas:
     async def test_descripcion_correcta_y_sin_secretos(self, cliente):
         c = await cliente()
         respuesta = await c.get(
-            "/v1/departamentos/motor-de-voz/descripcion", headers=_cabeceras()
+            "/v1/departamentos/fabrica-de-agentes/descripcion", headers=_cabeceras()
         )
         assert respuesta.status == 200
         datos = await respuesta.json()
-        assert datos["codigo"] == "motor-de-voz"
-        assert datos["nombre"] == "Motor de Voz"
+        assert datos["codigo"] == "fabrica-de-agentes"
+        assert datos["nombre"] == "Fábrica de Agentes"
         assert datos["prefijo_rama_autorizado"] == "quantumcore/"
         assert datos["version_contrato"] == "1.0"
         crudo = json.dumps(datos)
@@ -137,6 +137,18 @@ class TestDescripcionYConsultas:
         assert respuesta.status == 200
         assert datos["solo_lectura"] is True
         assert "QuantumCore" in datos["resultado"]["flujo"]
+
+    async def test_consulta_devuelve_correlacion_sin_modificar_estado(self, cliente):
+        c = await cliente()
+        respuesta = await c.post(
+            "/v1/consultas",
+            json={"tipo": "salud", "correlacion_id": "corr-lectura-001"},
+            headers=_cabeceras(),
+        )
+        datos = await respuesta.json()
+        assert respuesta.status == 200
+        assert datos["solo_lectura"] is True
+        assert datos["correlacion_id"] == "corr-lectura-001"
 
     async def test_consulta_sin_autenticacion_se_rechaza(self, cliente):
         c = await cliente()
