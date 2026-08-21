@@ -9,7 +9,7 @@ parado sin reconstruirlo de cero.
 
 ```mermaid
 flowchart TB
-    subgraph FAB["MOTOR-DE-VOZ- · la Fábrica de Agentes (ESTE repo)"]
+    subgraph FAB["FABRICA-DE-AGENTES · la Fábrica de Agentes (ESTE repo)"]
         BRAIN["brain/<br/>quién es el agente<br/>prompt · tenants · tools"]
         VOICE["voice/<br/>cómo habla<br/>3 motores · LiveKit"]
         API["api/<br/>reparte tokens"]

@@ -49,7 +49,7 @@ UN RUNTIME + PERFILES POR VERTICAL + CONFIGURACIÓN POR TENANT
 | 6 | Fish Audio | Pago por uso. `s2.1-pro`, con `s2.1-pro-free` por configuración |
 | 7 | Transporte Live | **LiveKit self-hosted.** El binario `livekit-server` corre en nuestro backend. **LiveKit Cloud queda fuera de alcance** |
 | 8 | Control plane | Supabase |
-| 9 | Ubicación local | `C:\Users\sergio\Desktop\MOTOR-DE-VOZ`, fuera de la bóveda |
+| 9 | Ubicación local | `C:\Users\sergio\Desktop\FABRICA-DE-AGENTES`, fuera de la bóveda |
 
 Estas decisiones cierran, para este motor, varios pendientes del §33 del contexto maestro: proveedor de voz, proveedor de modelos e infraestructura Live. Se registran como decididas **para este motor**, no para todo el ecosistema.
 

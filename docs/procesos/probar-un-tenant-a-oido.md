@@ -7,7 +7,7 @@ que escucharlo.
 ## Levantar todo en local
 
 ```bash
-cd "C:\Users\sergio\Desktop\MOTOR-DE-VOZ"; .\arrancar.ps1
+cd "C:\Users\sergio\Desktop\FABRICA-DE-AGENTES"; .\arrancar.ps1
 ```
 
 Abre cuatro ventanas y el navegador en `localhost:5173`. Los errores salen en

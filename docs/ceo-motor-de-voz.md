@@ -12,7 +12,7 @@ Dominus -> QuantumCore -> CEO Motor de Voz -> worker registrado -> resultado
 ```
 
 El código departamental es `motor-de-voz`, el contrato es `1.0`, el
-repositorio autorizado es `C:\Users\sergio\Desktop\MOTOR-DE-VOZ` y una acción
+repositorio autorizado es `C:\Users\sergio\Desktop\FABRICA-DE-AGENTES` y una acción
 solo puede apuntar a una rama `quantumcore/*`. `main` se rechaza siempre.
 
 La implementación vive fuera de `brain/`:
@@ -99,7 +99,7 @@ Ejemplo sin secretos:
   "trabajo_id": "job-018",
   "clave_idempotencia": "motor-de-voz:job-018:v1",
   "departamento": "motor-de-voz",
-  "repositorio": "C:\\Users\\sergio\\Desktop\\MOTOR-DE-VOZ",
+  "repositorio": "C:\\Users\\sergio\\Desktop\\FABRICA-DE-AGENTES",
   "tipo_trabajo": "implementar_codigo",
   "titulo": "Agregar una validación",
   "objetivo": "Implementar el cambio autorizado por QuantumCore.",
@@ -221,7 +221,7 @@ salida de un modelo. No se suministra un adaptador de shell genérico.
 ## Pruebas y build
 
 ```powershell
-$env:UV_CACHE_DIR='C:\Users\sergio\Desktop\MOTOR-DE-VOZ\.uv-cache'
+$env:UV_CACHE_DIR='C:\Users\sergio\Desktop\FABRICA-DE-AGENTES\.uv-cache'
 uv run pytest -q tests/test_ceo_departamental.py
 uv run pytest -q
 npm.cmd run build --prefix frontend/panel
