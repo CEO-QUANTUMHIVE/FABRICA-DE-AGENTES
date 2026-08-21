@@ -25,6 +25,7 @@ from aiohttp import web
 from livekit import api
 
 from motor_voz.api import niveles as catalogo_niveles
+from motor_voz.api.ceo import preparar_ceo, rutas_ceo
 from motor_voz.api.limites import LimiteAlcanzado, Limitador
 from motor_voz.brain import conversacion as cerebro_texto
 from motor_voz.brain.mensajes import CanalTenant, ResultadoIngreso, Turno
@@ -32,6 +33,7 @@ from motor_voz.brain.tenants import repositorio
 from motor_voz.brain.tenants.modelos import Tenant
 from motor_voz.channels.whatsapp import firma as firma_whatsapp
 from motor_voz.channels.whatsapp import payload as payload_whatsapp
+from motor_voz.ceo.departamento import RegistroWorkers
 from motor_voz.brain.tenants.resolver import TENANT_POR_DEFECTO
 from motor_voz.config import Config, ConfigInvalida, cargar
 from motor_voz.voice.motores import catalogo_de_voces, ruta_de_muestra
@@ -692,6 +694,7 @@ def crear_app(
     crear_negocio_borrador: CrearNegocio | None = None,
     activar_negocio_fn: ActivarNegocio | None = None,
     responder: Responder | None = None,
+    registro_workers_ceo: RegistroWorkers | None = None,
 ) -> web.Application:
     cfg = config or cargar()
 
@@ -739,8 +742,10 @@ def crear_app(
         por_ip_hora=cfg.max_sesiones_por_ip_hora,
         por_dia=cfg.max_sesiones_por_dia,
     )
+    preparar_ceo(app, registro_workers_ceo)
     app.add_routes(
         [
+            *rutas_ceo(),
             web.get("/api/salud", salud),
             web.get("/api/niveles", listar_niveles),
             web.get("/api/voces", listar_voces),

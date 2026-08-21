@@ -42,6 +42,12 @@ las trampas, no el código.
 ahí, no acá. El spec de este repo lo dice en su §1: *"no es un orquestador ni
 un reemplazo de Quantum Core"*.
 
+La interfaz privada de esa flecha es el **CEO departamental de Motor de Voz**:
+QuantumCore descubre capacidades y entrega trabajos estructurados por `/v1`;
+el CEO valida alcance, tenant, worker, cerebro, herramientas y presupuesto
+antes de despachar. No acepta comandos libres y no replica las colas ni la
+auditoría durable de QuantumCore. Ver [`ceo-motor-de-voz.md`](ceo-motor-de-voz.md).
+
 ---
 
 ## 2. Qué producto necesita qué
@@ -128,8 +134,10 @@ el `modo` (público/interno) decide qué **puede hacer**, no solo qué dice.
 | Contrato multicanal | ✅ Web, WhatsApp, Instagram y Facebook comparten `brain/` |
 | Adaptadores WhatsApp / Instagram / Facebook | ❌ faltan conexiones reales |
 | Panel de control | 🟡 base PWA + API de entrenamiento listas; falta login E2E y módulos reales de chat/memorias/métricas |
+| CEO departamental para QuantumCore | ✅ contrato `/v1`, políticas, aislamiento e idempotencia local; adaptadores de workers se conectan al arranque |
 
-**286 tests en verde**, más 8 controles de integración y los humos contra APIs reales.
+**426 tests en verde** (15 pruebas reales deseleccionadas), más los controles
+de integración y los humos contra APIs reales.
 
 ---
 

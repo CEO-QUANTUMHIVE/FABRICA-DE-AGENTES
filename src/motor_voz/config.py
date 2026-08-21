@@ -97,6 +97,9 @@ class Config:
     # tocar la base ni desconectar canales. Existe para el momento en que algo
     # se desmadra y no hay tiempo de averiguar de quien es.
     respuestas_automaticas: bool = True
+    # Credencial maquina-a-maquina del plano de control. Vacia = las rutas del
+    # CEO existen pero fallan cerradas; nunca se reutiliza una clave de voz.
+    quantumcore_token: str = ""
 
 
 def cargar(entorno: dict[str, str] | None = None) -> Config:
@@ -173,4 +176,5 @@ def cargar(entorno: dict[str, str] | None = None) -> Config:
             e.get("RESPUESTAS_AUTOMATICAS", "on").strip().lower()
             not in {"off", "no", "false", "0"}
         ),
+        quantumcore_token=e.get("QUANTUMCORE_TOKEN", "").strip(),
     )
