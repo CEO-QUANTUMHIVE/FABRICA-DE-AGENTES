@@ -1,0 +1,993 @@
+import { createClient } from "@supabase/supabase-js";
+import { Room, RoomEvent, Track } from "livekit-client";
+import "./app.css";
+import {
+  PERFIL_QUANTUMHIVE,
+  armarPiezasConocimiento,
+  normalizarPerfil,
+  promptDesdeFicha,
+  progresoDelPerfil,
+  slugDeNombre,
+} from "./modelo.js";
+
+const API_URL = (import.meta.env.VITE_API_URL || "").replace(/\/$/, "");
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || "";
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || "";
+const configurado = Boolean(API_URL && SUPABASE_URL && SUPABASE_ANON_KEY);
+const supabase = configurado ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
+const STORAGE_KEY = "quantumhive:fabrica:perfil:v1";
+const LOGO_STORAGE_KEY = "quantumhive:fabrica:logo:v1";
+const MOTOR_DE_NIVEL = { 1: "pipeline", 2: "gemini", 3: "openai" };
+const NIVEL_DE_MOTOR = { pipeline: 1, gemini: 2, openai: 3 };
+const preescucha = new Audio();
+
+const state = {
+  perfil: cargarPerfilLocal(),
+  logo: cargarLogoLocal(),
+  session: null,
+  tenant: null,
+  conocimiento: [],
+  whatsapp: null,
+  publicando: false,
+  voz: {
+    motor: "pipeline",
+    catalogo: [],
+    seleccion: "",
+    sala: null,
+    conectando: false,
+    temporizador: null,
+  },
+  entrevista: {
+    ficha: {},
+    campo: "nombre",
+    progreso: 0,
+    mensajes: [
+      { rol: "assistant", texto: "Vamos a fabricar tu agente paso a paso. ¿Cómo se llama el negocio o el agente?" },
+    ],
+  },
+  mensajes: [
+    {
+      rol: "assistant",
+      texto: "Soy el agente de QuantumHive conectado al brain real. Publicá el entrenamiento y preguntame como lo haría un posible cliente.",
+    },
+  ],
+};
+
+function cargarPerfilLocal() {
+  try {
+    return normalizarPerfil(JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}"));
+  } catch {
+    return normalizarPerfil(PERFIL_QUANTUMHIVE);
+  }
+}
+
+function cargarLogoLocal() {
+  const valor = localStorage.getItem(LOGO_STORAGE_KEY) || "";
+  return /^data:image\/(png|jpeg|webp);base64,/i.test(valor) ? valor : "";
+}
+
+function iniciales(nombre = "") {
+  const partes = String(nombre).trim().split(/\s+/).filter(Boolean).slice(0, 2);
+  return (partes.map((parte) => parte[0]).join("") || "QH").toUpperCase();
+}
+
+function escapeHtml(valor = "") {
+  return String(valor).replace(
+    /[&<>'"]/g,
+    (caracter) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[caracter],
+  );
+}
+
+function plantilla() {
+  const p = state.perfil;
+  return `
+    <div class="ambient ambient--cyan"></div>
+    <div class="ambient ambient--violet"></div>
+    <div class="hex-field" aria-hidden="true"></div>
+
+    <header class="topbar">
+      <a class="brand" href="#laboratorio" aria-label="QuantumHive Fábrica de Agentes">
+        <span class="hive-mark" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>
+        <span><strong>QUANTUM HIVE</strong><small>Fábrica de agentes</small></span>
+      </a>
+      <div class="topbar__center">
+        <span class="batch">CLIENTE 001</span>
+        <strong>QuantumHive</strong>
+        <span class="live-dot">tenant activo</span>
+      </div>
+      <button class="ghost-button" id="session-button" type="button">Ingresar</button>
+    </header>
+
+    <nav class="process-nav" aria-label="Etapas de fabricación">
+      <a href="#identidad"><span>01</span> Identidad</a>
+      <a href="#personalidad"><span>02</span> Personalidad</a>
+      <a href="#conocimiento"><span>03</span> Conocimiento</a>
+      <a href="#prueba"><span>04</span> Prueba</a>
+      <a href="#whatsapp"><span>05</span> WhatsApp</a>
+    </nav>
+
+    <main id="laboratorio" class="factory-shell">
+      <section class="control-column control-column--left">
+        <article class="glass-card identity-card" id="identidad">
+          <header class="card-heading">
+            <span class="module-number">MÓDULO 01</span>
+            <h2>Identidad</h2>
+            <span class="card-status">base activa</span>
+          </header>
+          <label class="field-label">Nombre del agente o negocio
+            <input data-profile="nombre" value="${escapeHtml(p.nombre)}" maxlength="80" />
+          </label>
+          <label class="field-label">Qué es
+            <input data-profile="rubro" value="${escapeHtml(p.rubro)}" maxlength="160" />
+          </label>
+          <label class="field-label">Promesa principal
+            <textarea data-profile="promesa" rows="4" maxlength="500">${escapeHtml(p.promesa)}</textarea>
+          </label>
+          <div class="logo-loader">
+            <div class="logo-loader__preview">
+              <img id="logo-preview" alt="Logo cargado" ${state.logo ? `src="${escapeHtml(state.logo)}"` : "hidden"} />
+              <span id="logo-preview-fallback" ${state.logo ? "hidden" : ""}>${escapeHtml(iniciales(p.nombre))}</span>
+            </div>
+            <div>
+              <strong>Logo de la marca</strong>
+              <small id="logo-message">PNG, JPG o WebP. Se convierte en el orbe central.</small>
+              <label class="logo-loader__button" for="logo-input">Cargar imagen</label>
+              <input id="logo-input" type="file" accept="image/png,image/jpeg,image/webp" hidden />
+              <button id="logo-remove" class="text-button" type="button" ${state.logo ? "" : "hidden"}>Quitar</button>
+            </div>
+          </div>
+        </article>
+
+        <article class="glass-card personality-card" id="personalidad">
+          <header class="card-heading">
+            <span class="module-number">MÓDULO 02</span>
+            <h2>Personalidad</h2>
+            <span class="card-status">conducta</span>
+          </header>
+          ${controlRango("energia", "Energía", p.energia)}
+          ${controlRango("empatia", "Empatía", p.empatia)}
+          ${controlRango("iniciativa", "Iniciativa", p.iniciativa)}
+          <p class="microcopy">Estos controles se convierten en instrucciones concretas. No son adjetivos decorativos.</p>
+        </article>
+      </section>
+
+      <section class="core-column" aria-label="Núcleo del agente">
+        <div class="core-label"><span></span> NÚCLEO DE FABRICACIÓN <span></span></div>
+        <div class="agent-vat" id="agent-vat">
+          <div class="vat-cap"><i></i><i></i><i></i></div>
+          <div class="energy-ring energy-ring--one"></div>
+          <div class="energy-ring energy-ring--two"></div>
+          <div class="energy-ring energy-ring--three"></div>
+          <div class="brand-orb" id="brand-orb" aria-label="Orbe de la marca">
+            <div class="brand-orb__halo"></div>
+            <div class="brand-orb__logo">
+              <img id="orb-logo" alt="" ${state.logo ? `src="${escapeHtml(state.logo)}"` : "hidden"} />
+              <span id="orb-fallback" ${state.logo ? "hidden" : ""}>${escapeHtml(iniciales(p.nombre))}</span>
+            </div>
+            <small>IDENTIDAD DE MARCA</small>
+          </div>
+          <div class="scan-line"></div>
+          <div class="vat-glass"></div>
+          <div class="vat-base">
+            <div class="core-readout">
+              <span id="core-percent">${progresoDelPerfil(p)}%</span>
+              <small id="core-state">DISEÑO LOCAL</small>
+            </div>
+          </div>
+        </div>
+        <div class="agent-nameplate">
+          <small>AGENTE RECEPTOR</small>
+          <h1 id="agent-name">${escapeHtml(p.nombre)}</h1>
+          <p id="agent-promise">${escapeHtml(p.promesa)}</p>
+        </div>
+        <div class="core-actions">
+          <button class="primary-button" id="prepare-button" type="button"><span>✦</span> Preparar entrenamiento</button>
+          <button class="secondary-button" id="voice-test-core" type="button">Hablar con el agente</button>
+        </div>
+        <p class="system-message" id="system-message">Tu diseño se guarda en este equipo. Para publicarlo en el agente real, ingresá con tu cuenta.</p>
+      </section>
+
+      <section class="control-column control-column--right">
+        <article class="glass-card voice-card">
+          <header class="card-heading">
+            <span class="module-number">SALIDA</span>
+            <h2>Voz</h2>
+            <span class="card-status card-status--cyan">conectada</span>
+          </header>
+          <div class="waveform" aria-hidden="true">${Array.from({ length: 34 }, (_, i) => `<i style="--wave:${18 + ((i * 23) % 65)}%"></i>`).join("")}</div>
+          <label class="field-label">Nivel de experiencia
+            <select id="voice-level">
+              <option value="pipeline">Nivel uno · voz clonada</option>
+              <option value="gemini">Nivel dos · voz natural</option>
+              <option value="openai">Nivel tres · voz premium</option>
+            </select>
+          </label>
+          <div class="voice-catalog" id="voice-catalog" aria-live="polite"></div>
+          <button class="voice-live-button" id="voice-live-button" type="button"><span></span> Probar agente con micrófono</button>
+          <div class="voice-meta"><span id="voice-name">Voz Fish del negocio</span><strong id="voice-state">LISTA</strong></div>
+          <p class="voice-message" id="voice-message">Fish usa la voz clonada aprobada de este negocio. La prueba conecta con el motor real.</p>
+        </article>
+
+        <article class="glass-card knowledge-card" id="conocimiento">
+          <header class="card-heading">
+            <span class="module-number">MÓDULO 03</span>
+            <h2>Conocimiento</h2>
+            <span class="card-status">versionado</span>
+          </header>
+          <label class="field-label">A quién ayudamos
+            <textarea data-profile="publico" rows="3" maxlength="600">${escapeHtml(p.publico)}</textarea>
+          </label>
+          <label class="field-label">Qué ofrecemos
+            <textarea data-profile="oferta" rows="4" maxlength="800">${escapeHtml(p.oferta)}</textarea>
+          </label>
+          <label class="field-label">Objetivo de la conversación
+            <textarea data-profile="objetivo" rows="4" maxlength="800">${escapeHtml(p.objetivo)}</textarea>
+          </label>
+          <details class="limits-details">
+            <summary>Límites y derivación humana</summary>
+            <textarea data-profile="limites" rows="4" maxlength="800">${escapeHtml(p.limites)}</textarea>
+          </details>
+        </article>
+      </section>
+
+      <section class="onboarding-console" id="autoguiado">
+        <div class="test-console__copy">
+          <span class="module-number">AUTOGUIADO · BRAIN QUANTUMHIVE</span>
+          <h2>Contale tu negocio al agente</h2>
+          <p>No necesitás completar un formulario técnico. El brain te entrevista, arma la ficha y la deja lista para pasar al laboratorio o crear un nuevo agente borrador.</p>
+          <div class="interview-meter"><i id="interview-fill" style="--progress:0%"></i></div>
+          <strong class="interview-percent" id="interview-percent">0% · 0 de 7 respuestas</strong>
+          <div class="autoguide-actions">
+            <button class="secondary-button" id="use-interview-button" type="button" disabled>Pasar al laboratorio</button>
+            <button class="primary-button" id="draft-button" type="button" disabled>Crear agente borrador</button>
+          </div>
+        </div>
+        <div class="chat-machine">
+          <div class="chat-log" id="interview-log" aria-live="polite"></div>
+          <form class="chat-form" id="interview-form">
+            <input name="mensaje" autocomplete="off" maxlength="2000" placeholder="Respondé con tus palabras…" />
+            <button type="submit" aria-label="Responder">➤</button>
+          </form>
+        </div>
+      </section>
+
+      <section class="test-console" id="prueba">
+        <div class="test-console__copy">
+          <span class="module-number">MÓDULO 04 · BRAIN REAL</span>
+          <h2>Probalo antes de soltarlo</h2>
+          <p>Este chat usa el mismo tenant, prompt, conocimiento y herramientas que atienden en la web.</p>
+          <div class="brain-path"><span>FRONTEND</span><i></i><span>BRAIN</span><i></i><span>QUANTUMHIVE</span></div>
+        </div>
+        <div class="chat-machine">
+          <div class="chat-log" id="chat-log" aria-live="polite"></div>
+          <form class="chat-form" id="chat-form">
+            <input name="mensaje" autocomplete="off" maxlength="2000" placeholder="Preguntale como si fueras un cliente…" />
+            <button type="submit" aria-label="Enviar">➤</button>
+          </form>
+        </div>
+      </section>
+
+      <section class="whatsapp-console" id="whatsapp">
+        <div class="whatsapp-console__copy">
+          <span class="module-number">CANAL · WHATSAPP CLOUD API</span>
+          <h2>Conectar el número de QuantumHive</h2>
+          <p>La fábrica vincula el número con este negocio. El token de Meta nunca entra al navegador ni se guarda en la base.</p>
+          <div class="readiness" id="whatsapp-readiness">
+            <span data-ready="token">Token del servidor</span>
+            <span data-ready="firma">Firma de Meta</span>
+            <span data-ready="verificacion">Verificación webhook</span>
+          </div>
+        </div>
+        <form class="whatsapp-form" id="whatsapp-form">
+          <label class="field-label">Phone number ID de Meta
+            <input name="phone_number_id" inputmode="numeric" pattern="[0-9]{6,30}" maxlength="30" placeholder="Ejemplo: 123456789012345" required />
+          </label>
+          <label class="field-label">Nombre visible
+            <input name="nombre" maxlength="100" value="WhatsApp QuantumHive" />
+          </label>
+          <div class="dialog-actions">
+            <button class="secondary-button" name="accion" value="guardar" type="submit">Guardar vínculo</button>
+            <button class="primary-button" name="accion" value="conectar" type="submit">Verificar y conectar</button>
+          </div>
+          <p class="dialog-message" id="whatsapp-message">Ingresá como dueño para configurar el canal.</p>
+        </form>
+      </section>
+    </main>
+
+    <dialog class="machine-dialog" id="training-dialog">
+      <button class="dialog-close" data-close-dialog type="button" aria-label="Cerrar">×</button>
+      <span class="module-number">PROTOCOLO DE ENTRENAMIENTO</span>
+      <h2>Publicar en el agente QuantumHive</h2>
+      <p>Se crearán cinco piezas de conocimiento versionadas. El borrador no afecta al agente hasta que confirmes esta publicación.</p>
+      <div class="training-pieces" id="training-pieces"></div>
+      <div class="dialog-actions">
+        <button class="secondary-button" data-close-dialog type="button">Seguir editando</button>
+        <button class="primary-button" id="publish-button" type="button">Publicar entrenamiento</button>
+      </div>
+      <p class="dialog-message" id="publish-message"></p>
+    </dialog>
+
+    <dialog class="machine-dialog login-dialog" id="login-dialog">
+      <button class="dialog-close" data-close-login type="button" aria-label="Cerrar">×</button>
+      <span class="module-number">ACCESO DEL FUNDADOR</span>
+      <h2>Entrá para fabricar</h2>
+      <p>El diseño puede hacerse sin cuenta. Publicar exige tu sesión y pertenencia al tenant QuantumHive.</p>
+      <form id="login-form" class="login-form">
+        <label class="field-label">Correo<input name="email" type="email" autocomplete="email" required /></label>
+        <label class="field-label">Contraseña<input name="password" type="password" autocomplete="current-password" required /></label>
+        <button class="primary-button" type="submit">Conectar con QuantumHive</button>
+      </form>
+      <p class="dialog-message" id="login-message"></p>
+    </dialog>
+
+    <dialog class="machine-dialog" id="draft-dialog">
+      <button class="dialog-close" data-close-draft type="button" aria-label="Cerrar">×</button>
+      <span class="module-number">NUEVO AGENTE · BORRADOR</span>
+      <h2>Crear el negocio entrevistado</h2>
+      <p>El agente nace en borrador. No se activa ni atiende clientes hasta completar el circuito comercial.</p>
+      <form id="draft-form" class="login-form">
+        <label class="field-label">Identificador<input name="slug" maxlength="63" required /></label>
+        <label class="field-label">Dominio opcional<input name="dominio" placeholder="negocio.com" /></label>
+        <label class="field-label">Correo del dueño opcional<input name="email_dueno" type="email" /></label>
+        <button class="primary-button" type="submit">Crear agente borrador</button>
+      </form>
+      <p class="dialog-message" id="draft-message"></p>
+    </dialog>
+
+    <footer class="footer-line">
+      <span>QUANTUMHIVE · FABRICACIÓN MULTITENANT</span>
+      <span id="footer-state">Borrador local protegido</span>
+    </footer>
+  `;
+}
+
+function controlRango(clave, etiqueta, valor) {
+  return `
+    <label class="range-control">
+      <span>${etiqueta}<output data-output="${clave}">${valor}</output></span>
+      <input type="range" min="0" max="100" value="${valor}" data-profile="${clave}" />
+      <i style="--fill:${valor}%"></i>
+    </label>`;
+}
+
+async function api(ruta, opciones = {}) {
+  if (!state.session?.access_token) throw new Error("Ingresá para usar el agente real.");
+  const respuesta = await fetch(`${API_URL}${ruta}`, {
+    ...opciones,
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${state.session.access_token}`,
+      ...opciones.headers,
+    },
+  });
+  const cuerpo = await respuesta.json().catch(() => ({}));
+  if (!respuesta.ok) throw new Error(cuerpo.error || "No se pudo completar la operación.");
+  return cuerpo;
+}
+
+async function apiPublica(ruta, opciones = {}) {
+  if (!API_URL) throw new Error("Falta configurar la URL de la API.");
+  const respuesta = await fetch(`${API_URL}${ruta}`, {
+    ...opciones,
+    headers: { "Content-Type": "application/json", ...opciones.headers },
+  });
+  const cuerpo = await respuesta.json().catch(() => ({}));
+  if (!respuesta.ok) throw new Error(cuerpo.error || "No se pudo continuar.");
+  return cuerpo;
+}
+
+function bind() {
+  document.querySelectorAll("[data-profile]").forEach((control) => {
+    control.addEventListener("input", () => {
+      const clave = control.dataset.profile;
+      state.perfil[clave] = control.type === "range" ? Number(control.value) : control.value;
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state.perfil));
+      actualizarNucleo();
+      if (control.type === "range") {
+        const output = document.querySelector(`[data-output="${clave}"]`);
+        if (output) output.value = control.value;
+        control.nextElementSibling?.style.setProperty("--fill", `${control.value}%`);
+      }
+    });
+  });
+
+  document.querySelector("#session-button").addEventListener("click", manejarSesion);
+  document.querySelector("#prepare-button").addEventListener("click", prepararEntrenamiento);
+  document.querySelector("#publish-button").addEventListener("click", publicarEntrenamiento);
+  document.querySelector("#login-form").addEventListener("submit", ingresar);
+  document.querySelector("#chat-form").addEventListener("submit", probarAgente);
+  document.querySelector("#interview-form").addEventListener("submit", continuarEntrevista);
+  document.querySelector("#use-interview-button").addEventListener("click", pasarEntrevistaAlLaboratorio);
+  document.querySelector("#draft-button").addEventListener("click", abrirBorrador);
+  document.querySelector("#draft-form").addEventListener("submit", crearAgenteBorrador);
+  document.querySelector("#whatsapp-form").addEventListener("submit", guardarWhatsapp);
+  document.querySelector("#logo-input").addEventListener("change", cargarLogo);
+  document.querySelector("#logo-remove").addEventListener("click", quitarLogo);
+  document.querySelector("#voice-live-button").addEventListener("click", alternarVozReal);
+  document.querySelector("#voice-test-core").addEventListener("click", alternarVozReal);
+  document.querySelectorAll("[data-close-dialog]").forEach((boton) => boton.addEventListener("click", () => document.querySelector("#training-dialog").close()));
+  document.querySelectorAll("[data-close-login]").forEach((boton) => boton.addEventListener("click", () => document.querySelector("#login-dialog").close()));
+  document.querySelectorAll("[data-close-draft]").forEach((boton) => boton.addEventListener("click", () => document.querySelector("#draft-dialog").close()));
+  document.querySelector("#voice-level").addEventListener("change", cambiarMotorDeVoz);
+  renderChat();
+  renderEntrevista();
+}
+
+function actualizarNucleo() {
+  const porcentaje = progresoDelPerfil(state.perfil);
+  document.querySelector("#core-percent").textContent = `${porcentaje}%`;
+  document.querySelector("#agent-name").textContent = state.perfil.nombre || "Agente sin nombre";
+  document.querySelector("#agent-promise").textContent = state.perfil.promesa || "Definí la promesa principal.";
+  const fallback = iniciales(state.perfil.nombre);
+  document.querySelector("#orb-fallback").textContent = fallback;
+  document.querySelector("#logo-preview-fallback").textContent = fallback;
+  document.querySelector("#agent-vat").style.setProperty("--completion", `${porcentaje}%`);
+  document.querySelector("#footer-state").textContent = state.tenant
+    ? `Conectado a ${state.tenant.nombre}`
+    : "Borrador local protegido";
+}
+
+function leerArchivoComoDataUrl(archivo) {
+  return new Promise((resolve, reject) => {
+    const lector = new FileReader();
+    lector.onload = () => resolve(String(lector.result || ""));
+    lector.onerror = () => reject(new Error("No se pudo leer la imagen."));
+    lector.readAsDataURL(archivo);
+  });
+}
+
+function cargarImagen(url) {
+  return new Promise((resolve, reject) => {
+    const imagen = new Image();
+    imagen.onload = () => resolve(imagen);
+    imagen.onerror = () => reject(new Error("La imagen no es válida."));
+    imagen.src = url;
+  });
+}
+
+async function optimizarLogo(archivo) {
+  const tipos = new Set(["image/png", "image/jpeg", "image/webp"]);
+  if (!tipos.has(archivo.type)) throw new Error("Usá una imagen PNG, JPG o WebP.");
+  if (archivo.size > 5 * 1024 * 1024) throw new Error("El logo debe pesar menos de 5 MB.");
+  const origen = await leerArchivoComoDataUrl(archivo);
+  const imagen = await cargarImagen(origen);
+  const lado = 512;
+  const canvas = document.createElement("canvas");
+  canvas.width = lado;
+  canvas.height = lado;
+  const contexto = canvas.getContext("2d");
+  const escala = Math.min(lado / imagen.naturalWidth, lado / imagen.naturalHeight);
+  const ancho = imagen.naturalWidth * escala;
+  const alto = imagen.naturalHeight * escala;
+  contexto.clearRect(0, 0, lado, lado);
+  contexto.drawImage(imagen, (lado - ancho) / 2, (lado - alto) / 2, ancho, alto);
+  return canvas.toDataURL("image/webp", 0.9);
+}
+
+async function cargarLogo(evento) {
+  const archivo = evento.currentTarget.files?.[0];
+  if (!archivo) return;
+  const mensaje = document.querySelector("#logo-message");
+  mensaje.textContent = "Convirtiendo el logo en orbe…";
+  try {
+    state.logo = await optimizarLogo(archivo);
+    localStorage.setItem(LOGO_STORAGE_KEY, state.logo);
+    actualizarLogo();
+    mensaje.textContent = "Logo convertido. Quedó aplicado al orbe central.";
+  } catch (error) {
+    mensaje.textContent = error.message;
+  } finally {
+    evento.currentTarget.value = "";
+  }
+}
+
+function quitarLogo() {
+  state.logo = "";
+  localStorage.removeItem(LOGO_STORAGE_KEY);
+  actualizarLogo();
+  document.querySelector("#logo-message").textContent = "Logo quitado. Podés cargar otra imagen.";
+}
+
+function actualizarLogo() {
+  for (const id of ["logo-preview", "orb-logo"]) {
+    const imagen = document.querySelector(`#${id}`);
+    imagen.hidden = !state.logo;
+    if (state.logo) imagen.src = state.logo;
+    else imagen.removeAttribute("src");
+  }
+  document.querySelector("#logo-preview-fallback").hidden = Boolean(state.logo);
+  document.querySelector("#orb-fallback").hidden = Boolean(state.logo);
+  document.querySelector("#logo-remove").hidden = !state.logo;
+  document.querySelector("#agent-vat").classList.toggle("has-brand-logo", Boolean(state.logo));
+}
+
+function urlDeMuestra(ruta) {
+  if (!ruta) return "";
+  return new URL(ruta, `${location.origin}${import.meta.env.BASE_URL}`).href;
+}
+
+async function cambiarMotorDeVoz(evento) {
+  await desconectarVoz({ silencioso: true });
+  state.voz.motor = evento.currentTarget.value;
+  state.voz.seleccion = "";
+  document.querySelector("#agent-vat").dataset.voice = state.voz.motor;
+  await cargarVoces();
+}
+
+async function cargarVoces() {
+  const contenedor = document.querySelector("#voice-catalog");
+  contenedor.innerHTML = '<span class="voice-loading">Cargando voces…</span>';
+  if (state.voz.motor === "pipeline") {
+    state.voz.catalogo = [{ voz: "", nombre: "Voz Fish clonada del negocio", genero: "" }];
+    state.voz.seleccion = "";
+    renderVoces();
+    return;
+  }
+  try {
+    const respuesta = await fetch(`${API_URL}/api/voces?motor=${state.voz.motor}`);
+    const datos = await respuesta.json();
+    if (!respuesta.ok) throw new Error(datos.error || "No se pudo cargar el catálogo.");
+    state.voz.catalogo = datos.voces || [];
+    state.voz.seleccion = state.voz.catalogo[0]?.voz || "";
+    renderVoces();
+  } catch (error) {
+    state.voz.catalogo = [];
+    contenedor.innerHTML = `<span class="voice-loading is-error">${escapeHtml(error.message)}</span>`;
+  }
+}
+
+function renderVoces() {
+  const catalogo = state.voz.catalogo;
+  const contenedor = document.querySelector("#voice-catalog");
+  const pipeline = state.voz.motor === "pipeline";
+  contenedor.innerHTML = catalogo.map((voz) => `
+    <button class="voice-chip ${voz.voz === state.voz.seleccion ? "is-selected" : ""}" data-voice="${escapeHtml(voz.voz)}" type="button">
+      <span>${escapeHtml(voz.nombre)}</span>${voz.muestra ? "<small>▶ escuchar</small>" : "<small>Fish · clon aprobada</small>"}
+    </button>`).join("");
+  contenedor.querySelectorAll("[data-voice]").forEach((boton) => {
+    boton.addEventListener("click", () => elegirVoz(boton.dataset.voice));
+  });
+  const elegida = catalogo.find((voz) => voz.voz === state.voz.seleccion) || catalogo[0];
+  document.querySelector("#voice-name").textContent = elegida?.nombre || "Sin voces disponibles";
+  document.querySelector("#voice-message").textContent = pipeline
+    ? "Fish usa la voz clonada aprobada de este negocio. Tocá Probar para escucharla conversando de verdad."
+    : `${catalogo.length} voces disponibles. Tocá un nombre para oír una muestra sin gastar una sesión.`;
+}
+
+async function elegirVoz(clave) {
+  if (state.voz.sala) await desconectarVoz({ silencioso: true });
+  state.voz.seleccion = clave;
+  renderVoces();
+  const voz = state.voz.catalogo.find((item) => item.voz === clave);
+  if (!voz?.muestra) return;
+  preescucha.pause();
+  preescucha.currentTime = 0;
+  preescucha.src = urlDeMuestra(voz.muestra);
+  try {
+    await preescucha.play();
+    document.querySelector("#voice-state").textContent = "MUESTRA";
+  } catch {
+    document.querySelector("#voice-message").textContent = "No se pudo reproducir esta muestra. Probá otra voz.";
+  }
+}
+
+function estadoVoz(estado, mensaje = "") {
+  const vat = document.querySelector("#agent-vat");
+  vat.dataset.audio = estado;
+  document.querySelector("#voice-state").textContent = estado.toUpperCase();
+  if (mensaje) document.querySelector("#voice-message").textContent = mensaje;
+  const activo = Boolean(state.voz.sala);
+  document.querySelector("#voice-live-button").classList.toggle("is-live", activo);
+  document.querySelector("#voice-live-button").innerHTML = activo
+    ? "<span></span> Terminar conversación"
+    : "<span></span> Probar agente con micrófono";
+  document.querySelector("#voice-test-core").textContent = activo ? "Terminar conversación" : "Hablar con el agente";
+}
+
+async function alternarVozReal() {
+  if (state.voz.sala) await desconectarVoz();
+  else await conectarVoz();
+}
+
+async function conectarVoz() {
+  if (state.voz.conectando) return;
+  state.voz.conectando = true;
+  estadoVoz("conectando", "Conectando con el motor de voz real…");
+  const nivel = NIVEL_DE_MOTOR[state.voz.motor] || 1;
+  const headers = { "Content-Type": "application/json" };
+  if (state.session?.access_token) headers.Authorization = `Bearer ${state.session.access_token}`;
+  try {
+    const respuesta = await fetch(`${API_URL}/api/token`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ nivel, tenant: "quantumhive", voz: state.voz.seleccion || undefined }),
+    });
+    const datos = await respuesta.json();
+    if (!respuesta.ok) throw new Error(datos.error || "No se pudo iniciar la voz.");
+
+    const sala = new Room();
+    state.voz.sala = sala;
+    sala.on(RoomEvent.TrackSubscribed, (track) => {
+      if (track.kind !== Track.Kind.Audio) return;
+      const audio = track.attach();
+      audio.autoplay = true;
+      audio.dataset.factoryAudio = "true";
+      audio.hidden = true;
+      document.body.append(audio);
+      audio.play().catch(() => {});
+    });
+    sala.on(RoomEvent.ActiveSpeakersChanged, (participantes) => {
+      const hablaAgente = participantes.some((persona) => persona.identity !== sala.localParticipant.identity);
+      estadoVoz(hablaAgente ? "hablando" : "escuchando");
+    });
+    sala.on(RoomEvent.Disconnected, () => {
+      if (state.voz.sala === sala) state.voz.sala = null;
+      estadoVoz("lista", "Conversación finalizada. Podés cambiar de motor o probar otra vez.");
+    });
+    await sala.connect(datos.url, datos.token);
+    await sala.startAudio();
+    await sala.localParticipant.setMicrophoneEnabled(true);
+    estadoVoz("escuchando", `Motor ${state.voz.motor} conectado al agente real de ${datos.tenant}. Ya podés hablar.`);
+    clearTimeout(state.voz.temporizador);
+    state.voz.temporizador = setTimeout(() => desconectarVoz(), (datos.duracion_maxima_seg || 240) * 1000);
+  } catch (error) {
+    await desconectarVoz({ silencioso: true });
+    estadoVoz("error", error.message || "No se pudo conectar. Revisá el permiso del micrófono.");
+  } finally {
+    state.voz.conectando = false;
+  }
+}
+
+async function desconectarVoz({ silencioso = false } = {}) {
+  clearTimeout(state.voz.temporizador);
+  const sala = state.voz.sala;
+  state.voz.sala = null;
+  if (sala) await sala.disconnect();
+  document.querySelectorAll("audio[data-factory-audio]").forEach((audio) => audio.remove());
+  if (!silencioso) estadoVoz("lista", "Conversación finalizada. Podés elegir otra voz o volver a probar.");
+}
+
+function actualizarSesion() {
+  const boton = document.querySelector("#session-button");
+  const mensaje = document.querySelector("#system-message");
+  const coreState = document.querySelector("#core-state");
+  if (state.session && state.tenant) {
+    boton.textContent = "Cerrar sesión";
+    coreState.textContent = "BRAIN CONECTADO";
+    mensaje.textContent = `Conectado a ${state.tenant.nombre}. El entrenamiento se publicará solamente en este tenant.`;
+    document.body.dataset.connected = "true";
+  } else {
+    boton.textContent = "Ingresar";
+    coreState.textContent = "DISEÑO LOCAL";
+    mensaje.textContent = configurado
+      ? "Tu diseño se guarda en este equipo. Para publicarlo en el agente real, ingresá con tu cuenta."
+      : "Configurá la API y Supabase para conectar el agente real.";
+    document.body.dataset.connected = "false";
+  }
+  actualizarNucleo();
+  renderWhatsapp();
+}
+
+async function manejarSesion() {
+  if (state.session) {
+    await supabase.auth.signOut();
+    state.session = null;
+    state.tenant = null;
+    state.conocimiento = [];
+    state.whatsapp = null;
+    actualizarSesion();
+    return;
+  }
+  const dialogo = document.querySelector("#login-dialog");
+  if (!configurado) {
+    document.querySelector("#login-message").textContent = "Falta configurar la conexión pública del frontend.";
+  }
+  dialogo.showModal();
+}
+
+async function ingresar(evento) {
+  evento.preventDefault();
+  const mensaje = document.querySelector("#login-message");
+  if (!supabase) {
+    mensaje.textContent = "La conexión todavía no está configurada.";
+    return;
+  }
+  const datos = new FormData(evento.currentTarget);
+  mensaje.textContent = "Verificando identidad y tenant…";
+  const { data, error } = await supabase.auth.signInWithPassword({
+    email: datos.get("email"),
+    password: datos.get("password"),
+  });
+  if (error) {
+    mensaje.textContent = `No pudimos ingresar: ${error.message}`;
+    return;
+  }
+  state.session = data.session;
+  try {
+    await cargarQuantumHive();
+    document.querySelector("#login-dialog").close();
+    evento.currentTarget.reset();
+    mensaje.textContent = "";
+    actualizarSesion();
+  } catch (fallo) {
+    await supabase.auth.signOut();
+    state.session = null;
+    mensaje.textContent = fallo.message;
+  }
+}
+
+async function cargarQuantumHive() {
+  const datos = await api("/api/panel/tenants");
+  state.tenant = datos.tenants?.find((tenant) => tenant.slug === "quantumhive") || null;
+  if (!state.tenant) throw new Error("La sesión es válida, pero no pertenece al tenant QuantumHive.");
+  const conocimiento = await api("/api/panel/quantumhive/conocimiento");
+  state.conocimiento = conocimiento.conocimiento || [];
+  const canales = await api("/api/panel/quantumhive/canales");
+  state.whatsapp = canales.canales?.find((canal) => canal.canal === "whatsapp") || null;
+  renderWhatsapp();
+}
+
+function prepararEntrenamiento() {
+  const piezas = armarPiezasConocimiento(state.perfil);
+  document.querySelector("#training-pieces").innerHTML = piezas.map((pieza, indice) => `
+    <div class="training-piece">
+      <span>${String(indice + 1).padStart(2, "0")}</span>
+      <div><strong>${escapeHtml(pieza.titulo)}</strong><small>${escapeHtml(pieza.categoria)} · ${escapeHtml(pieza.clave)}</small></div>
+      <i>LISTA</i>
+    </div>`).join("");
+  document.querySelector("#publish-message").textContent = state.session
+    ? `Destino verificado: ${state.tenant?.nombre || "QuantumHive"}.`
+    : "Ingresá antes de publicar. El diseño no se pierde.";
+  document.querySelector("#training-dialog").showModal();
+}
+
+async function publicarEntrenamiento() {
+  if (state.publicando) return;
+  if (!state.session || !state.tenant) {
+    document.querySelector("#training-dialog").close();
+    document.querySelector("#login-dialog").showModal();
+    return;
+  }
+
+  const boton = document.querySelector("#publish-button");
+  const mensaje = document.querySelector("#publish-message");
+  const piezas = armarPiezasConocimiento(state.perfil);
+  state.publicando = true;
+  boton.disabled = true;
+
+  try {
+    for (const [indice, pieza] of piezas.entries()) {
+      mensaje.textContent = `Entrenando módulo ${indice + 1} de ${piezas.length}: ${pieza.titulo}…`;
+      const borrador = await api("/api/panel/quantumhive/conocimiento/borradores", {
+        method: "POST",
+        body: JSON.stringify({ ...pieza, motivo: "Fabricación inicial del agente QuantumHive" }),
+      });
+      await api(`/api/panel/quantumhive/conocimiento/${encodeURIComponent(borrador.borrador.version_id)}/publicar`, {
+        method: "POST",
+        body: JSON.stringify({ motivo: "Publicado desde la Fábrica de Agentes" }),
+      });
+    }
+    await cargarQuantumHive();
+    mensaje.textContent = "Entrenamiento publicado. El brain de QuantumHive ya carga esta versión.";
+    document.querySelector("#core-state").textContent = "ENTRENADO";
+    document.querySelector("#footer-state").textContent = `${piezas.length} módulos publicados en QuantumHive`;
+    boton.textContent = "Entrenamiento publicado ✓";
+  } catch (fallo) {
+    mensaje.textContent = `Se detuvo la publicación: ${fallo.message}`;
+    boton.disabled = false;
+  } finally {
+    state.publicando = false;
+  }
+}
+
+async function continuarEntrevista(evento) {
+  evento.preventDefault();
+  if (!state.entrevista.campo) return;
+  const input = evento.currentTarget.elements.mensaje;
+  const texto = input.value.trim();
+  if (!texto) return;
+  const campo = state.entrevista.campo;
+  state.entrevista.mensajes.push({ rol: "user", texto });
+  state.entrevista.mensajes.push({ rol: "assistant", texto: "El brain está armando la ficha…", pendiente: true });
+  input.value = "";
+  renderEntrevista();
+  try {
+    const respuesta = await apiPublica("/api/fabrica/entrevista", {
+      method: "POST",
+      body: JSON.stringify({ campo, mensaje: texto, ficha: state.entrevista.ficha }),
+    });
+    state.entrevista.ficha = respuesta.ficha;
+    state.entrevista.campo = respuesta.siguiente;
+    state.entrevista.progreso = respuesta.progreso;
+    state.entrevista.mensajes.pop();
+    state.entrevista.mensajes.push({ rol: "assistant", texto: respuesta.respuesta });
+  } catch (fallo) {
+    state.entrevista.mensajes.pop();
+    state.entrevista.mensajes.push({ rol: "assistant", texto: fallo.message, error: true });
+  }
+  renderEntrevista();
+}
+
+function renderEntrevista() {
+  const entrevista = state.entrevista;
+  const log = document.querySelector("#interview-log");
+  if (!log) return;
+  log.innerHTML = entrevista.mensajes.map((mensaje) => `
+    <div class="chat-message chat-message--${mensaje.rol} ${mensaje.pendiente ? "is-pending" : ""} ${mensaje.error ? "is-error" : ""}">
+      <small>${mensaje.rol === "user" ? "VOS" : "GUÍA QH"}</small>
+      <p>${escapeHtml(mensaje.texto)}</p>
+    </div>`).join("");
+  log.scrollTop = log.scrollHeight;
+  const respondidas = Object.keys(entrevista.ficha).length;
+  document.querySelector("#interview-fill").style.setProperty("--progress", `${entrevista.progreso}%`);
+  document.querySelector("#interview-percent").textContent = `${entrevista.progreso}% · ${respondidas} de 7 respuestas`;
+  document.querySelector("#use-interview-button").disabled = entrevista.progreso !== 100;
+  document.querySelector("#draft-button").disabled = entrevista.progreso !== 100;
+  const input = document.querySelector("#interview-form input");
+  input.disabled = entrevista.progreso === 100;
+  input.placeholder = entrevista.progreso === 100 ? "Ficha completa" : "Respondé con tus palabras…";
+}
+
+function pasarEntrevistaAlLaboratorio() {
+  if (state.entrevista.progreso !== 100) return;
+  state.perfil = normalizarPerfil(state.entrevista.ficha);
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state.perfil));
+  document.querySelectorAll("[data-profile]").forEach((control) => {
+    const valor = state.perfil[control.dataset.profile];
+    control.value = valor;
+    if (control.type === "range") {
+      document.querySelector(`[data-output="${control.dataset.profile}"]`).value = valor;
+      control.nextElementSibling?.style.setProperty("--fill", `${valor}%`);
+    }
+  });
+  actualizarNucleo();
+  document.querySelector("#identidad").scrollIntoView({ behavior: "smooth" });
+}
+
+function abrirBorrador() {
+  if (state.entrevista.progreso !== 100) return;
+  if (!state.session) {
+    document.querySelector("#login-dialog").showModal();
+    return;
+  }
+  const dialogo = document.querySelector("#draft-dialog");
+  dialogo.querySelector('[name="slug"]').value = slugDeNombre(state.entrevista.ficha.nombre);
+  document.querySelector("#draft-message").textContent = "Se creará como borrador, sin activar ventas ni canales.";
+  dialogo.showModal();
+}
+
+async function crearAgenteBorrador(evento) {
+  evento.preventDefault();
+  const mensaje = document.querySelector("#draft-message");
+  const datos = new FormData(evento.currentTarget);
+  mensaje.textContent = "Creando el agente aislado en su propio negocio…";
+  try {
+    const resultado = await api("/api/fabrica/negocios", {
+      method: "POST",
+      body: JSON.stringify({
+        slug: datos.get("slug"),
+        nombre: state.entrevista.ficha.nombre,
+        perfil: "receptor",
+        prompt_propio: promptDesdeFicha(state.entrevista.ficha),
+        dominio: datos.get("dominio"),
+        email_dueno: datos.get("email_dueno"),
+      }),
+    });
+    mensaje.textContent = `Agente ${resultado.negocio.slug} creado como borrador. Ya puede seguir al entrenamiento y activación comercial.`;
+  } catch (fallo) {
+    mensaje.textContent = fallo.message;
+  }
+}
+
+function renderWhatsapp() {
+  const mensaje = document.querySelector("#whatsapp-message");
+  const formulario = document.querySelector("#whatsapp-form");
+  if (!mensaje || !formulario) return;
+  const canal = state.whatsapp;
+  if (canal) {
+    formulario.elements.phone_number_id.value = canal.cuenta_externa_id || "";
+    formulario.elements.nombre.value = canal.nombre || "WhatsApp QuantumHive";
+  }
+  const preparacion = canal?.preparacion || {};
+  const mapa = {
+    token: preparacion.token_configurado,
+    firma: preparacion.firma_configurada,
+    verificacion: preparacion.verificacion_configurada,
+  };
+  Object.entries(mapa).forEach(([clave, listo]) => {
+    document.querySelector(`[data-ready="${clave}"]`)?.classList.toggle("is-ready", Boolean(listo));
+  });
+  mensaje.textContent = !state.session
+    ? "Ingresá como dueño para configurar el canal."
+    : canal
+      ? `Estado: ${canal.estado}. ${canal.estado === "conectado" ? "El canal puede recibir y responder." : "Guardado; faltan credenciales o la verificación final."}`
+      : "Todavía no hay un número de WhatsApp vinculado a QuantumHive.";
+}
+
+async function guardarWhatsapp(evento) {
+  evento.preventDefault();
+  const mensaje = document.querySelector("#whatsapp-message");
+  if (!state.session || !state.tenant) {
+    document.querySelector("#login-dialog").showModal();
+    return;
+  }
+  const datos = new FormData(evento.currentTarget);
+  const confirmar = evento.submitter?.value === "conectar";
+  mensaje.textContent = confirmar ? "Verificando credenciales del servidor…" : "Guardando vínculo seguro…";
+  try {
+    const resultado = await api("/api/panel/quantumhive/canales/whatsapp", {
+      method: "POST",
+      body: JSON.stringify({
+        phone_number_id: datos.get("phone_number_id"),
+        nombre: datos.get("nombre"),
+        confirmar,
+      }),
+    });
+    state.whatsapp = resultado.canal;
+    renderWhatsapp();
+  } catch (fallo) {
+    mensaje.textContent = fallo.message;
+  }
+}
+
+async function probarAgente(evento) {
+  evento.preventDefault();
+  const input = evento.currentTarget.elements.mensaje;
+  const texto = input.value.trim();
+  if (!texto) return;
+  state.mensajes.push({ rol: "user", texto });
+  input.value = "";
+  state.mensajes.push({ rol: "assistant", texto: "Procesando con el brain…", pendiente: true });
+  renderChat();
+
+  try {
+    if (!state.session || !state.tenant) throw new Error("Ingresá para probar el brain real de QuantumHive.");
+    const historial = state.mensajes
+      .filter((mensaje) => !mensaje.pendiente)
+      .slice(-20, -1)
+      .map((mensaje) => ({ rol: mensaje.rol, texto: mensaje.texto }));
+    const respuesta = await api("/api/panel/quantumhive/chat", {
+      method: "POST",
+      body: JSON.stringify({ mensaje: texto, historial, modo: "cliente" }),
+    });
+    state.mensajes.pop();
+    state.mensajes.push({ rol: "assistant", texto: respuesta.respuesta });
+  } catch (fallo) {
+    state.mensajes.pop();
+    state.mensajes.push({ rol: "assistant", texto: fallo.message, error: true });
+  }
+  renderChat();
+}
+
+function renderChat() {
+  const log = document.querySelector("#chat-log");
+  log.innerHTML = state.mensajes.map((mensaje) => `
+    <div class="chat-message chat-message--${mensaje.rol} ${mensaje.pendiente ? "is-pending" : ""} ${mensaje.error ? "is-error" : ""}">
+      <small>${mensaje.rol === "user" ? "VOS" : "AGENTE QH"}</small>
+      <p>${escapeHtml(mensaje.texto)}</p>
+    </div>`).join("");
+  log.scrollTop = log.scrollHeight;
+}
+
+async function start() {
+  document.querySelector("#app").innerHTML = plantilla();
+  bind();
+  actualizarNucleo();
+  actualizarLogo();
+  await cargarVoces();
+  if (supabase) {
+    const { data } = await supabase.auth.getSession();
+    if (data.session) {
+      state.session = data.session;
+      try {
+        await cargarQuantumHive();
+      } catch {
+        await supabase.auth.signOut();
+        state.session = null;
+      }
+    }
+  }
+  actualizarSesion();
+}
+
+start();
