@@ -28,6 +28,7 @@ const state = {
   tenant: null,
   conocimiento: [],
   whatsapp: null,
+  whatsappDisponible: true,
   publicando: false,
   voz: {
     motor: "pipeline",
@@ -675,6 +676,7 @@ async function manejarSesion() {
     state.tenant = null;
     state.conocimiento = [];
     state.whatsapp = null;
+    state.whatsappDisponible = true;
     actualizarSesion();
     return;
   }
@@ -722,8 +724,16 @@ async function cargarQuantumHive() {
   if (!state.tenant) throw new Error("La sesión es válida, pero no pertenece al tenant QuantumHive.");
   const conocimiento = await api("/api/panel/quantumhive/conocimiento");
   state.conocimiento = conocimiento.conocimiento || [];
-  const canales = await api("/api/panel/quantumhive/canales");
-  state.whatsapp = canales.canales?.find((canal) => canal.canal === "whatsapp") || null;
+  try {
+    const canales = await api("/api/panel/quantumhive/canales");
+    state.whatsapp = canales.canales?.find((canal) => canal.canal === "whatsapp") || null;
+    state.whatsappDisponible = true;
+  } catch {
+    // WhatsApp se despliega por separado del panel. Una ruta todavia no
+    // publicada nunca debe invalidar una sesion ni bloquear el brain.
+    state.whatsapp = null;
+    state.whatsappDisponible = false;
+  }
   renderWhatsapp();
 }
 
@@ -899,6 +909,8 @@ function renderWhatsapp() {
   });
   mensaje.textContent = !state.session
     ? "Ingresá como dueño para configurar el canal."
+    : !state.whatsappDisponible
+      ? "El agente y el entrenamiento están activos. Falta publicar el módulo seguro de WhatsApp en el servidor."
     : canal
       ? `Estado: ${canal.estado}. ${canal.estado === "conectado" ? "El canal puede recibir y responder." : "Guardado; faltan credenciales o la verificación final."}`
       : "Todavía no hay un número de WhatsApp vinculado a QuantumHive.";
@@ -909,6 +921,10 @@ async function guardarWhatsapp(evento) {
   const mensaje = document.querySelector("#whatsapp-message");
   if (!state.session || !state.tenant) {
     document.querySelector("#login-dialog").showModal();
+    return;
+  }
+  if (!state.whatsappDisponible) {
+    mensaje.textContent = "WhatsApp todavía no está habilitado en el servidor. El resto del agente sigue operativo.";
     return;
   }
   const datos = new FormData(evento.currentTarget);
