@@ -73,3 +73,15 @@ def test_supabase_es_opcional_y_default_vacio():
     config = cargar(ENTORNO_COMPLETO)
     assert config.supabase_url == ""
     assert config.supabase_service_role_key == ""
+
+
+def test_carga_la_conexion_privada_al_perfilador():
+    config = cargar(
+        ENTORNO_COMPLETO
+        | {
+            "CENTRO_INTELIGENCIA_URL": "https://inteligencia.quantumhive.test",
+            "CENTRO_INTELIGENCIA_TOKEN": "token-interno",
+        }
+    )
+    assert config.centro_inteligencia_url == "https://inteligencia.quantumhive.test"
+    assert config.centro_inteligencia_token == "token-interno"

@@ -14,6 +14,9 @@ secrets/
 credentials/
 *api*.txt
 *token*.txt
+.mcp.json
+# Documentación personal usada para verificaciones externas: nunca al repo.
+DNI-*
 # binario de livekit-server.exe descargado a mano, no se versiona
 scripts/livekit/
 
@@ -87,6 +90,9 @@ token.txt
 # Grafo de conocimiento: se regenera solo en cada commit, no se versiona.
 # Consultalo con `graphify query "..."` antes de releer el repo entero.
 graphify-out/
+
+# Copia local regenerable de la memoria viva de QuantumCore.
+MEMORIA.md
 
 # Estado local del CLI de Supabase, no del proyecto
 supabase/.temp/

@@ -51,6 +51,14 @@ class CanalNoEncontrado(RuntimeError):
     """La cuenta externa no corresponde a un canal conectado y activo."""
 
 
+class CanalYaAsignado(RuntimeError):
+    """La cuenta externa ya pertenece a otro tenant.
+
+    Se mantiene un error propio para que la API pueda fallar cerrado sin
+    revelar a que negocio pertenece el numero.
+    """
+
+
 class ConversacionNoEncontrada(RuntimeError):
     """No hay una conversacion con ese id EN ESE TENANT.
 
@@ -166,6 +174,75 @@ async def canal_de_cuenta(
         nombre=datos.get("nombre", ""),
         estado=datos["estado"],
     )
+
+
+async def canales_para_panel(config: Config, tenant_id: str) -> list[dict]:
+    """Configuracion no secreta de los canales de UN tenant."""
+    cliente = await _cliente(config)
+    respuesta = (
+        await cliente.table("tenant_canales")
+        .select(
+            "id, canal, cuenta_externa_id, nombre, estado, secreto_ref, "
+            "created_at, updated_at"
+        )
+        .eq("tenant_id", tenant_id)
+        .order("created_at")
+        .execute()
+    )
+    return respuesta.data or []
+
+
+async def configurar_whatsapp(
+    config: Config,
+    *,
+    tenant_id: str,
+    cuenta_externa_id: str,
+    nombre: str,
+    secreto_ref: str,
+    estado: str,
+) -> dict:
+    """Vincula un numero a un tenant sin aceptar ni persistir su token.
+
+    No se usa un upsert directo: el conflicto global por phone_number_id
+    podria reasignar silenciosamente el numero de otro negocio.
+    """
+    cliente = await _cliente(config)
+    existente = (
+        await cliente.table("tenant_canales")
+        .select("id, tenant_id, estado")
+        .eq("canal", "whatsapp")
+        .eq("cuenta_externa_id", cuenta_externa_id)
+        .maybe_single()
+        .execute()
+    )
+    fila = existente.data if existente is not None else None
+    if fila and fila["tenant_id"] != tenant_id:
+        raise CanalYaAsignado("La cuenta de WhatsApp ya esta vinculada.")
+
+    datos = {
+        "tenant_id": tenant_id,
+        "canal": "whatsapp",
+        "cuenta_externa_id": cuenta_externa_id,
+        "nombre": nombre,
+        "secreto_ref": secreto_ref,
+        "estado": "conectado" if estado == "conectado" else "pendiente",
+    }
+    if fila:
+        # Guardar de nuevo una conexion sana no la degrada a pendiente.
+        if fila.get("estado") == "conectado" and estado != "conectado":
+            datos["estado"] = "conectado"
+        respuesta = (
+            await cliente.table("tenant_canales")
+            .update(datos)
+            .eq("id", fila["id"])
+            .eq("tenant_id", tenant_id)
+            .execute()
+        )
+    else:
+        respuesta = await cliente.table("tenant_canales").insert(datos).execute()
+
+    creadas = respuesta.data or []
+    return creadas[0] if isinstance(creadas, list) and creadas else datos
 
 
 async def registrar_mensaje_entrante(

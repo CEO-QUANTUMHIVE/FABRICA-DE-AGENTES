@@ -4,6 +4,8 @@ import "./app.css";
 import {
   PERFIL_QUANTUMHIVE,
   armarPiezasConocimiento,
+  editarInvestigacion,
+  integrarInvestigacion,
   normalizarPerfil,
   promptDesdeFicha,
   progresoDelPerfil,
@@ -17,6 +19,17 @@ const configurado = Boolean(API_URL && SUPABASE_URL && SUPABASE_ANON_KEY);
 const supabase = configurado ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const STORAGE_KEY = "quantumhive:fabrica:perfil:v1";
 const LOGO_STORAGE_KEY = "quantumhive:fabrica:logo:v1";
+const COLORES_STORAGE_KEY = "quantumhive:fabrica:colores:v1";
+const CAMPOS_ENTREVISTA = ["nombre", "rubro", "publico", "oferta", "promesa", "objetivo", "limites"];
+const PREGUNTAS_ENTREVISTA = {
+  nombre: "¿Cómo se llama el negocio o el agente?",
+  rubro: "¿A qué se dedica el negocio?",
+  publico: "¿A qué tipo de cliente ayuda principalmente?",
+  oferta: "¿Qué productos o servicios ofrece?",
+  promesa: "¿Qué resultado concreto promete?",
+  objetivo: "¿Qué debería lograr el agente en cada conversación?",
+  limites: "¿Qué no debe inventar y cuándo debe derivar a una persona?",
+};
 const MOTOR_DE_NIVEL = { 1: "pipeline", 2: "gemini", 3: "openai" };
 const NIVEL_DE_MOTOR = { pipeline: 1, gemini: 2, openai: 3 };
 const preescucha = new Audio();
@@ -24,11 +37,15 @@ const preescucha = new Audio();
 const state = {
   perfil: cargarPerfilLocal(),
   logo: cargarLogoLocal(),
+  colores: cargarColoresLocal(),
+  perfiladorDisponible: null,
   session: null,
   tenant: null,
   conocimiento: [],
   whatsapp: null,
   whatsappDisponible: true,
+  whatsappOnboarding: null,
+  whatsappAlta: { code: "", waba_id: "", phone_number_id: "", completando: false },
   publicando: false,
   voz: {
     motor: "pipeline",
@@ -64,7 +81,18 @@ function cargarPerfilLocal() {
 
 function cargarLogoLocal() {
   const valor = localStorage.getItem(LOGO_STORAGE_KEY) || "";
-  return /^data:image\/(png|jpeg|webp);base64,/i.test(valor) ? valor : "";
+  return /^(data:image\/(png|jpeg|webp);base64,|https:\/\/)/i.test(valor) ? valor : "";
+}
+
+function cargarColoresLocal() {
+  try {
+    const colores = JSON.parse(localStorage.getItem(COLORES_STORAGE_KEY) || "[]");
+    return Array.isArray(colores)
+      ? colores.filter((color) => /^#[0-9a-f]{6}$/i.test(color)).slice(0, 4)
+      : [];
+  } catch {
+    return [];
+  }
 }
 
 function iniciales(nombre = "") {
@@ -79,8 +107,37 @@ function escapeHtml(valor = "") {
   );
 }
 
+function lineas(valor = "") {
+  return String(valor).split(/\r?\n/).map((item) => item.trim()).filter(Boolean);
+}
+
+function preguntasDesdeTexto(valor = "") {
+  return lineas(valor).map((linea) => {
+    const [pregunta, ...respuesta] = linea.split("|");
+    return { pregunta: pregunta.trim(), respuesta: respuesta.join("|").trim() };
+  }).filter((item) => item.pregunta && item.respuesta);
+}
+
+function textoDePreguntas(preguntas = []) {
+  return (Array.isArray(preguntas) ? preguntas : [])
+    .map((item) => `${item?.pregunta || ""} | ${item?.respuesta || ""}`)
+    .filter((item) => item !== " | ")
+    .join("\n");
+}
+
 function plantilla() {
   const p = state.perfil;
+  const investigacion = p.investigacion && typeof p.investigacion === "object" ? p.investigacion : {};
+  const negocioInvestigado = investigacion.negocio && typeof investigacion.negocio === "object"
+    ? investigacion.negocio
+    : {};
+  const tieneInvestigacion = Boolean(
+    Object.values(negocioInvestigado).some(Boolean)
+    || investigacion.servicios?.length
+    || investigacion.precios?.length
+    || investigacion.horarios
+    || investigacion.preguntas_frecuentes?.length,
+  );
   return `
     <div class="ambient ambient--cyan"></div>
     <div class="ambient ambient--violet"></div>
@@ -235,7 +292,35 @@ function plantilla() {
         <div class="test-console__copy">
           <span class="module-number">AUTOGUIADO · BRAIN QUANTUMHIVE</span>
           <h2>Contale tu negocio al agente</h2>
-          <p>No necesitás completar un formulario técnico. El brain te entrevista, arma la ficha y la deja lista para pasar al laboratorio o crear un nuevo agente borrador.</p>
+          <p>Podés darle la web y las redes para que investigue primero. Después el brain solamente te pregunta lo que no pudo encontrar.</p>
+          <form class="research-box" id="research-form">
+            <strong>Investigar fuentes públicas</strong>
+            <div class="research-grid">
+              <input name="web" type="url" value="${escapeHtml(negocioInvestigado.web || "")}" placeholder="Web del negocio" />
+              <input name="instagram" value="${escapeHtml(negocioInvestigado.instagram || "")}" placeholder="Instagram: @usuario o URL" />
+              <input name="facebook" value="${escapeHtml(negocioInvestigado.facebook || "")}" placeholder="Facebook: usuario o URL" />
+              <input name="url_maps" type="url" value="${escapeHtml(negocioInvestigado.url_maps || "")}" placeholder="Google Maps (opcional)" />
+            </div>
+            <button class="secondary-button" id="research-button" type="submit">✦ Investigar mi negocio</button>
+            <small id="research-message">El token y los scrapers corren en el servidor; nunca llegan a tu navegador.</small>
+            <details class="research-review" id="research-review" ${tieneInvestigacion ? "open" : ""}>
+              <summary>Revisar o cargar los datos que aprenderá el agente</summary>
+              <p>Podés completar esto a mano aunque la investigación automática todavía no esté conectada.</p>
+              <div class="research-grid research-grid--contact">
+                <input name="direccion" value="${escapeHtml(negocioInvestigado.direccion || "")}" placeholder="Dirección" />
+                <input name="ciudad" value="${escapeHtml(negocioInvestigado.ciudad || "")}" placeholder="Ciudad" />
+                <input name="telefono" value="${escapeHtml(negocioInvestigado.telefono || "")}" placeholder="Teléfono" />
+                <input name="whatsapp" value="${escapeHtml(negocioInvestigado.whatsapp || "")}" placeholder="WhatsApp" />
+                <input name="email" type="email" value="${escapeHtml(negocioInvestigado.email || "")}" placeholder="Correo" />
+              </div>
+              <label>Servicios <textarea name="servicios" rows="4" placeholder="Uno por línea">${escapeHtml((investigacion.servicios || []).join("\n"))}</textarea></label>
+              <label>Precios publicados <textarea name="precios" rows="3" placeholder="Uno por línea; dejalo vacío si no querés publicar precios">${escapeHtml((investigacion.precios || []).join("\n"))}</textarea></label>
+              <label>Horarios <textarea name="horarios" rows="2" placeholder="Ejemplo: lunes a viernes de 9 a 18">${escapeHtml(investigacion.horarios || "")}</textarea></label>
+              <label>Preguntas frecuentes <textarea name="preguntas_frecuentes" rows="4" placeholder="Una por línea: Pregunta | Respuesta">${escapeHtml(textoDePreguntas(investigacion.preguntas_frecuentes))}</textarea></label>
+              <button class="secondary-button" id="save-research-button" type="button">Guardar datos revisados</button>
+              <small id="research-review-message">Nada se publica hasta que confirmes el entrenamiento.</small>
+            </details>
+          </form>
           <div class="interview-meter"><i id="interview-fill" style="--progress:0%"></i></div>
           <strong class="interview-percent" id="interview-percent">0% · 0 de 7 respuestas</strong>
           <div class="autoguide-actions">
@@ -271,35 +356,29 @@ function plantilla() {
       <section class="whatsapp-console" id="whatsapp">
         <div class="whatsapp-console__copy">
           <span class="module-number">CANAL · WHATSAPP CLOUD API</span>
-          <h2>Conectar el número de QuantumHive</h2>
+          <h2>Conectar el WhatsApp del negocio</h2>
           <p>La fábrica vincula el número con este negocio. El token de Meta nunca entra al navegador ni se guarda en la base.</p>
           <div class="readiness" id="whatsapp-readiness">
-            <span data-ready="token">Token del servidor</span>
-            <span data-ready="firma">Firma de Meta</span>
-            <span data-ready="verificacion">Verificación webhook</span>
+            <span data-ready="meta">App Meta</span>
+            <span data-ready="almacen">Almacén privado</span>
+            <span data-ready="verificacion">Webhook</span>
           </div>
         </div>
-        <form class="whatsapp-form" id="whatsapp-form">
-          <label class="field-label">Phone number ID de Meta
-            <input name="phone_number_id" inputmode="numeric" pattern="[0-9]{6,30}" maxlength="30" placeholder="Ejemplo: 123456789012345" required />
-          </label>
-          <label class="field-label">Nombre visible
-            <input name="nombre" maxlength="100" value="WhatsApp QuantumHive" />
-          </label>
+        <div class="whatsapp-form" id="whatsapp-form">
+          <p>Conservás el mismo número y la app de WhatsApp Business. Meta te pedirá autorizar a QuantumHive en una ventana segura.</p>
           <div class="dialog-actions">
-            <button class="secondary-button" name="accion" value="guardar" type="submit">Guardar vínculo</button>
-            <button class="primary-button" name="accion" value="conectar" type="submit">Verificar y conectar</button>
+            <button class="primary-button" id="whatsapp-connect" type="button">Conectar mi WhatsApp Business</button>
           </div>
           <p class="dialog-message" id="whatsapp-message">Ingresá como dueño para configurar el canal.</p>
-        </form>
+        </div>
       </section>
     </main>
 
     <dialog class="machine-dialog" id="training-dialog">
       <button class="dialog-close" data-close-dialog type="button" aria-label="Cerrar">×</button>
       <span class="module-number">PROTOCOLO DE ENTRENAMIENTO</span>
-      <h2>Publicar en el agente QuantumHive</h2>
-      <p>Se crearán cinco piezas de conocimiento versionadas. El borrador no afecta al agente hasta que confirmes esta publicación.</p>
+      <h2>Publicar en el agente del negocio</h2>
+      <p>Se crearán las piezas base y todo lo verificado en las fuentes públicas. El borrador no afecta al agente hasta que confirmes esta publicación.</p>
       <div class="training-pieces" id="training-pieces"></div>
       <div class="dialog-actions">
         <button class="secondary-button" data-close-dialog type="button">Seguir editando</button>
@@ -312,7 +391,7 @@ function plantilla() {
       <button class="dialog-close" data-close-login type="button" aria-label="Cerrar">×</button>
       <span class="module-number">ACCESO DEL FUNDADOR</span>
       <h2>Entrá para fabricar</h2>
-      <p>El diseño puede hacerse sin cuenta. Publicar exige tu sesión y pertenencia al tenant QuantumHive.</p>
+      <p>El diseño puede hacerse sin cuenta. Publicar exige tu sesión y pertenencia al negocio.</p>
       <form id="login-form" class="login-form">
         <label class="field-label">Correo<input name="email" type="email" autocomplete="email" required /></label>
         <label class="field-label">Contraseña<input name="password" type="password" autocomplete="current-password" required /></label>
@@ -377,7 +456,13 @@ async function apiPublica(ruta, opciones = {}) {
   return cuerpo;
 }
 
+function rutaDelTenant(sufijo = "") {
+  if (!state.tenant?.slug) throw new Error("No hay un negocio seleccionado.");
+  return `/api/panel/${encodeURIComponent(state.tenant.slug)}${sufijo}`;
+}
+
 function bind() {
+  window.addEventListener("message", recibirSesionWhatsapp);
   document.querySelectorAll("[data-profile]").forEach((control) => {
     control.addEventListener("input", () => {
       const clave = control.dataset.profile;
@@ -398,10 +483,12 @@ function bind() {
   document.querySelector("#login-form").addEventListener("submit", ingresar);
   document.querySelector("#chat-form").addEventListener("submit", probarAgente);
   document.querySelector("#interview-form").addEventListener("submit", continuarEntrevista);
+  document.querySelector("#research-form").addEventListener("submit", investigarNegocio);
+  document.querySelector("#save-research-button").addEventListener("click", guardarInvestigacionManual);
   document.querySelector("#use-interview-button").addEventListener("click", pasarEntrevistaAlLaboratorio);
   document.querySelector("#draft-button").addEventListener("click", abrirBorrador);
   document.querySelector("#draft-form").addEventListener("submit", crearAgenteBorrador);
-  document.querySelector("#whatsapp-form").addEventListener("submit", guardarWhatsapp);
+  document.querySelector("#whatsapp-connect").addEventListener("click", conectarWhatsapp);
   document.querySelector("#logo-input").addEventListener("change", cargarLogo);
   document.querySelector("#logo-remove").addEventListener("click", quitarLogo);
   document.querySelector("#voice-live-button").addEventListener("click", alternarVozReal);
@@ -423,9 +510,17 @@ function actualizarNucleo() {
   document.querySelector("#orb-fallback").textContent = fallback;
   document.querySelector("#logo-preview-fallback").textContent = fallback;
   document.querySelector("#agent-vat").style.setProperty("--completion", `${porcentaje}%`);
+  actualizarColoresDeMarca();
   document.querySelector("#footer-state").textContent = state.tenant
     ? `Conectado a ${state.tenant.nombre}`
     : "Borrador local protegido";
+}
+
+function actualizarColoresDeMarca() {
+  const vat = document.querySelector("#agent-vat");
+  if (!vat) return;
+  vat.style.setProperty("--brand-primary", state.colores[0] || "var(--cyan)");
+  vat.style.setProperty("--brand-secondary", state.colores[1] || state.colores[0] || "var(--violet)");
 }
 
 function leerArchivoComoDataUrl(archivo) {
@@ -500,6 +595,76 @@ function actualizarLogo() {
   document.querySelector("#orb-fallback").hidden = Boolean(state.logo);
   document.querySelector("#logo-remove").hidden = !state.logo;
   document.querySelector("#agent-vat").classList.toggle("has-brand-logo", Boolean(state.logo));
+}
+
+function sincronizarFormularioPerfil() {
+  document.querySelectorAll("[data-profile]").forEach((control) => {
+    const valor = state.perfil[control.dataset.profile];
+    control.value = valor;
+    if (control.type === "range") {
+      document.querySelector(`[data-output="${control.dataset.profile}"]`).value = valor;
+      control.nextElementSibling?.style.setProperty("--fill", `${valor}%`);
+    }
+  });
+  actualizarNucleo();
+}
+
+function sincronizarInvestigacion() {
+  const formulario = document.querySelector("#research-form");
+  if (!formulario) return;
+  const investigacion = state.perfil.investigacion && typeof state.perfil.investigacion === "object"
+    ? state.perfil.investigacion
+    : {};
+  const negocio = investigacion.negocio && typeof investigacion.negocio === "object"
+    ? investigacion.negocio
+    : {};
+  ["web", "instagram", "facebook", "url_maps", "direccion", "ciudad", "telefono", "whatsapp", "email"].forEach((clave) => {
+    if (formulario.elements[clave]) formulario.elements[clave].value = negocio[clave] || "";
+  });
+  formulario.elements.servicios.value = (investigacion.servicios || []).join("\n");
+  formulario.elements.precios.value = (investigacion.precios || []).join("\n");
+  formulario.elements.horarios.value = investigacion.horarios || "";
+  formulario.elements.preguntas_frecuentes.value = textoDePreguntas(investigacion.preguntas_frecuentes);
+  document.querySelector("#research-review").open = true;
+}
+
+function guardarInvestigacionManual() {
+  const formulario = document.querySelector("#research-form");
+  const datos = new FormData(formulario);
+  state.perfil = editarInvestigacion(state.perfil, {
+    negocio: Object.fromEntries(
+      ["web", "instagram", "facebook", "url_maps", "direccion", "ciudad", "telefono", "whatsapp", "email"]
+        .map((clave) => [clave, String(datos.get(clave) || "").trim()]),
+    ),
+    servicios: lineas(datos.get("servicios")),
+    precios: lineas(datos.get("precios")),
+    horarios: String(datos.get("horarios") || "").trim(),
+    preguntas_frecuentes: preguntasDesdeTexto(datos.get("preguntas_frecuentes")),
+  });
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state.perfil));
+  sincronizarFormularioPerfil();
+  sincronizarInvestigacion();
+  const piezas = armarPiezasConocimiento(state.perfil).length;
+  document.querySelector("#research-review-message").textContent = `Datos guardados en este equipo. Quedaron ${piezas} módulos listos para revisar antes de publicar.`;
+}
+
+function aplicarMarcaPublicada() {
+  const pieza = state.conocimiento.find((item) => item.clave === "fabrica-datos-publicos");
+  if (!pieza) return;
+  const version = pieza.versiones?.find((item) => item.id === pieza.version_publicada_id)
+    || pieza.versiones?.[0];
+  const marca = version?.contenido?.marca;
+  if (!marca || typeof marca !== "object") return;
+  if (/^https:\/\//i.test(marca.logo_url || "")) {
+    state.logo = marca.logo_url;
+    localStorage.setItem(LOGO_STORAGE_KEY, state.logo);
+  }
+  if (Array.isArray(marca.colores)) {
+    state.colores = marca.colores.filter((color) => /^#[0-9a-f]{6}$/i.test(color)).slice(0, 4);
+    localStorage.setItem(COLORES_STORAGE_KEY, JSON.stringify(state.colores));
+  }
+  actualizarLogo();
+  actualizarColoresDeMarca();
 }
 
 function urlDeMuestra(ruta) {
@@ -677,6 +842,7 @@ async function manejarSesion() {
     state.conocimiento = [];
     state.whatsapp = null;
     state.whatsappDisponible = true;
+    state.whatsappOnboarding = null;
     actualizarSesion();
     return;
   }
@@ -706,7 +872,7 @@ async function ingresar(evento) {
   }
   state.session = data.session;
   try {
-    await cargarQuantumHive();
+    await cargarTenantActual();
     document.querySelector("#login-dialog").close();
     evento.currentTarget.reset();
     mensaje.textContent = "";
@@ -718,20 +884,34 @@ async function ingresar(evento) {
   }
 }
 
-async function cargarQuantumHive() {
+async function cargarTenantActual() {
   const datos = await api("/api/panel/tenants");
-  state.tenant = datos.tenants?.find((tenant) => tenant.slug === "quantumhive") || null;
-  if (!state.tenant) throw new Error("La sesión es válida, pero no pertenece al tenant QuantumHive.");
-  const conocimiento = await api("/api/panel/quantumhive/conocimiento");
+  const tenants = datos.tenants || [];
+  const solicitado = new URLSearchParams(window.location.search).get("tenant");
+  state.tenant = solicitado
+    ? tenants.find((tenant) => tenant.slug === solicitado) || null
+    : tenants.find((tenant) => tenant.slug === "quantumhive") || (tenants.length === 1 ? tenants[0] : null);
+  if (!state.tenant) {
+    throw new Error(solicitado
+      ? "La sesión es válida, pero no pertenece a ese negocio."
+      : "La sesión pertenece a varios negocios. Abrí el panel con ?tenant=slug para elegir uno.");
+  }
+  const conocimiento = await api(rutaDelTenant("/conocimiento"));
   state.conocimiento = conocimiento.conocimiento || [];
+  aplicarMarcaPublicada();
   try {
-    const canales = await api("/api/panel/quantumhive/canales");
+    const [canales, onboarding] = await Promise.all([
+      api(rutaDelTenant("/canales")),
+      api(rutaDelTenant("/canales/whatsapp/onboarding")),
+    ]);
     state.whatsapp = canales.canales?.find((canal) => canal.canal === "whatsapp") || null;
+    state.whatsappOnboarding = onboarding;
     state.whatsappDisponible = true;
   } catch {
     // WhatsApp se despliega por separado del panel. Una ruta todavia no
     // publicada nunca debe invalidar una sesion ni bloquear el brain.
     state.whatsapp = null;
+    state.whatsappOnboarding = null;
     state.whatsappDisponible = false;
   }
   renderWhatsapp();
@@ -768,25 +948,115 @@ async function publicarEntrenamiento() {
   try {
     for (const [indice, pieza] of piezas.entries()) {
       mensaje.textContent = `Entrenando módulo ${indice + 1} de ${piezas.length}: ${pieza.titulo}…`;
-      const borrador = await api("/api/panel/quantumhive/conocimiento/borradores", {
+      const borrador = await api(rutaDelTenant("/conocimiento/borradores"), {
         method: "POST",
-        body: JSON.stringify({ ...pieza, motivo: "Fabricación inicial del agente QuantumHive" }),
+        body: JSON.stringify({ ...pieza, motivo: `Fabricación inicial del agente ${state.tenant.nombre}` }),
       });
-      await api(`/api/panel/quantumhive/conocimiento/${encodeURIComponent(borrador.borrador.version_id)}/publicar`, {
+      await api(rutaDelTenant(`/conocimiento/${encodeURIComponent(borrador.borrador.version_id)}/publicar`), {
         method: "POST",
         body: JSON.stringify({ motivo: "Publicado desde la Fábrica de Agentes" }),
       });
     }
-    await cargarQuantumHive();
-    mensaje.textContent = "Entrenamiento publicado. El brain de QuantumHive ya carga esta versión.";
+    await cargarTenantActual();
+    mensaje.textContent = `Entrenamiento publicado. El brain de ${state.tenant.nombre} ya carga esta versión.`;
     document.querySelector("#core-state").textContent = "ENTRENADO";
-    document.querySelector("#footer-state").textContent = `${piezas.length} módulos publicados en QuantumHive`;
+    document.querySelector("#footer-state").textContent = `${piezas.length} módulos publicados en ${state.tenant.nombre}`;
     boton.textContent = "Entrenamiento publicado ✓";
   } catch (fallo) {
     mensaje.textContent = `Se detuvo la publicación: ${fallo.message}`;
     boton.disabled = false;
   } finally {
     state.publicando = false;
+  }
+}
+
+async function cargarEstadoPerfilador() {
+  const boton = document.querySelector("#research-button");
+  const mensaje = document.querySelector("#research-message");
+  try {
+    const resultado = await apiPublica("/api/fabrica/perfilador");
+    state.perfiladorDisponible = Boolean(resultado.disponible);
+    boton.disabled = !state.perfiladorDisponible;
+    if (!state.perfiladorDisponible) {
+      mensaje.textContent = "El módulo está instalado, pero falta conectar la URL y el token en el servidor.";
+    }
+  } catch {
+    state.perfiladorDisponible = false;
+    boton.disabled = true;
+    mensaje.textContent = "El servidor todavía no publicó el módulo de investigación.";
+  }
+}
+
+async function investigarNegocio(evento) {
+  evento.preventDefault();
+  const formulario = evento.currentTarget;
+  const boton = document.querySelector("#research-button");
+  const mensaje = document.querySelector("#research-message");
+  const datos = new FormData(formulario);
+  const nombre = String(state.entrevista.ficha.nombre || state.perfil.nombre || "").trim();
+  if (!nombre) {
+    mensaje.textContent = "Primero escribí el nombre del negocio en Identidad o respondé la primera pregunta.";
+    return;
+  }
+  boton.disabled = true;
+  boton.textContent = "Investigando fuentes públicas…";
+  mensaje.textContent = "Buscando web, redes, servicios, horarios y marca. Puede tardar hasta un minuto.";
+  try {
+    const resultado = await apiPublica("/api/fabrica/investigar", {
+      method: "POST",
+      body: JSON.stringify({
+        nombre,
+        web: datos.get("web"),
+        instagram: datos.get("instagram"),
+        facebook: datos.get("facebook"),
+        url_maps: datos.get("url_maps"),
+      }),
+    });
+    state.perfil = integrarInvestigacion(state.perfil, resultado.perfil);
+    const negocio = resultado.perfil?.negocio || {};
+    const servicios = resultado.perfil?.servicios || [];
+    const precios = resultado.perfil?.precios || [];
+    state.entrevista.ficha = {
+      ...state.entrevista.ficha,
+      ...(negocio.nombre ? { nombre: negocio.nombre } : {}),
+      ...(negocio.categoria ? { rubro: negocio.categoria } : {}),
+      ...(servicios.length || precios.length ? { oferta: state.perfil.oferta } : {}),
+    };
+    const faltantes = CAMPOS_ENTREVISTA.filter((campo) => !state.entrevista.ficha[campo]);
+    state.entrevista.campo = faltantes[0] || null;
+    state.entrevista.progreso = Math.round(100 * (CAMPOS_ENTREVISTA.length - faltantes.length) / CAMPOS_ENTREVISTA.length);
+    const marca = resultado.perfil?.marca || {};
+    if (/^https:\/\//i.test(marca.logo_url || "")) {
+      state.logo = marca.logo_url;
+      localStorage.setItem(LOGO_STORAGE_KEY, state.logo);
+      actualizarLogo();
+    }
+    state.colores = Array.isArray(marca.colores)
+      ? marca.colores.filter((color) => /^#[0-9a-f]{6}$/i.test(color)).slice(0, 4)
+      : [];
+    localStorage.setItem(COLORES_STORAGE_KEY, JSON.stringify(state.colores));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state.perfil));
+    sincronizarFormularioPerfil();
+    sincronizarInvestigacion();
+    const hallazgos = [
+      servicios.length ? `${servicios.length} servicios` : "",
+      precios.length ? `${precios.length} precios` : "",
+      resultado.perfil?.horarios ? "horarios" : "",
+      resultado.perfil?.preguntas_frecuentes?.length ? `${resultado.perfil.preguntas_frecuentes.length} preguntas frecuentes` : "",
+      marca.logo_url ? "logo" : "",
+    ].filter(Boolean);
+    const siguiente = state.entrevista.campo ? ` Ahora sigamos: ${PREGUNTAS_ENTREVISTA[state.entrevista.campo]}` : " La ficha quedó completa.";
+    state.entrevista.mensajes.push({
+      rol: "assistant",
+      texto: `Investigación lista. Encontré ${hallazgos.join(", ") || "los datos básicos del negocio"}.${siguiente}`,
+    });
+    renderEntrevista();
+    mensaje.textContent = `Investigación aplicada a ${state.perfil.nombre}. Revisá lo encontrado y completá lo que falta con el guía.`;
+  } catch (fallo) {
+    mensaje.textContent = fallo.message;
+  } finally {
+    boton.textContent = "✦ Investigar mi negocio";
+    boton.disabled = state.perfiladorDisponible === false;
   }
 }
 
@@ -842,15 +1112,7 @@ function pasarEntrevistaAlLaboratorio() {
   if (state.entrevista.progreso !== 100) return;
   state.perfil = normalizarPerfil(state.entrevista.ficha);
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state.perfil));
-  document.querySelectorAll("[data-profile]").forEach((control) => {
-    const valor = state.perfil[control.dataset.profile];
-    control.value = valor;
-    if (control.type === "range") {
-      document.querySelector(`[data-output="${control.dataset.profile}"]`).value = valor;
-      control.nextElementSibling?.style.setProperty("--fill", `${valor}%`);
-    }
-  });
-  actualizarNucleo();
+  sincronizarFormularioPerfil();
   document.querySelector("#identidad").scrollIntoView({ behavior: "smooth" });
 }
 
@@ -892,17 +1154,14 @@ async function crearAgenteBorrador(evento) {
 function renderWhatsapp() {
   const mensaje = document.querySelector("#whatsapp-message");
   const formulario = document.querySelector("#whatsapp-form");
+  const boton = document.querySelector("#whatsapp-connect");
   if (!mensaje || !formulario) return;
   const canal = state.whatsapp;
-  if (canal) {
-    formulario.elements.phone_number_id.value = canal.cuenta_externa_id || "";
-    formulario.elements.nombre.value = canal.nombre || "WhatsApp QuantumHive";
-  }
-  const preparacion = canal?.preparacion || {};
+  const alta = state.whatsappOnboarding || {};
   const mapa = {
-    token: preparacion.token_configurado,
-    firma: preparacion.firma_configurada,
-    verificacion: preparacion.verificacion_configurada,
+    meta: Boolean(alta.app_id && alta.configuration_id),
+    almacen: alta.almacen_configurado,
+    verificacion: alta.disponible,
   };
   Object.entries(mapa).forEach(([clave, listo]) => {
     document.querySelector(`[data-ready="${clave}"]`)?.classList.toggle("is-ready", Boolean(listo));
@@ -913,11 +1172,57 @@ function renderWhatsapp() {
       ? "El agente y el entrenamiento están activos. Falta publicar el módulo seguro de WhatsApp en el servidor."
     : canal
       ? `Estado: ${canal.estado}. ${canal.estado === "conectado" ? "El canal puede recibir y responder." : "Guardado; faltan credenciales o la verificación final."}`
-      : "Todavía no hay un número de WhatsApp vinculado a QuantumHive.";
+      : !alta.disponible
+        ? "Falta completar la configuración única de la app de QuantumHive en Meta."
+        : "Listo para vincular el WhatsApp Business de QuantumHive sin cambiar el número.";
+  if (boton) {
+    boton.disabled = !state.session || !state.whatsappDisponible || !alta.disponible || state.whatsappAlta.completando;
+    boton.textContent = state.whatsappAlta.completando
+      ? "Conectando con Meta…"
+      : canal?.estado === "conectado"
+        ? "Volver a autorizar WhatsApp"
+        : "Conectar mi WhatsApp Business";
+  }
 }
 
-async function guardarWhatsapp(evento) {
-  evento.preventDefault();
+function cargarSdkMeta(appId, version) {
+  if (window.FB) {
+    window.FB.init({ appId, cookie: true, xfbml: false, version });
+    return Promise.resolve();
+  }
+  return new Promise((resolve, reject) => {
+    window.fbAsyncInit = () => {
+      window.FB.init({ appId, cookie: true, xfbml: false, version });
+      resolve();
+    };
+    const existente = document.querySelector("#facebook-jssdk");
+    if (existente) return;
+    const script = document.createElement("script");
+    script.id = "facebook-jssdk";
+    script.src = "https://connect.facebook.net/es_LA/sdk.js";
+    script.async = true;
+    script.defer = true;
+    script.onerror = () => reject(new Error("No se pudo cargar la ventana segura de Meta."));
+    document.head.appendChild(script);
+  });
+}
+
+function recibirSesionWhatsapp(evento) {
+  if (!["https://www.facebook.com", "https://web.facebook.com"].includes(evento.origin)) return;
+  let datos = evento.data;
+  try {
+    if (typeof datos === "string") datos = JSON.parse(datos);
+  } catch {
+    return;
+  }
+  if (datos?.type !== "WA_EMBEDDED_SIGNUP") return;
+  if (!["FINISH", "FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING"].includes(datos.event)) return;
+  state.whatsappAlta.waba_id = String(datos.data?.waba_id || "");
+  state.whatsappAlta.phone_number_id = String(datos.data?.phone_number_id || "");
+  terminarConexionWhatsapp();
+}
+
+async function conectarWhatsapp() {
   const mensaje = document.querySelector("#whatsapp-message");
   if (!state.session || !state.tenant) {
     document.querySelector("#login-dialog").showModal();
@@ -927,22 +1232,64 @@ async function guardarWhatsapp(evento) {
     mensaje.textContent = "WhatsApp todavía no está habilitado en el servidor. El resto del agente sigue operativo.";
     return;
   }
-  const datos = new FormData(evento.currentTarget);
-  const confirmar = evento.submitter?.value === "conectar";
-  mensaje.textContent = confirmar ? "Verificando credenciales del servidor…" : "Guardando vínculo seguro…";
+  const alta = state.whatsappOnboarding;
+  if (!alta?.disponible) {
+    mensaje.textContent = "Primero hay que completar la configuración única de QuantumHive en Meta.";
+    return;
+  }
   try {
-    const resultado = await api("/api/panel/quantumhive/canales/whatsapp", {
+    state.whatsappAlta = { code: "", waba_id: "", phone_number_id: "", completando: false };
+    mensaje.textContent = "Abriendo la autorización oficial de Meta…";
+    await cargarSdkMeta(alta.app_id, alta.api_version);
+    window.FB.login((respuesta) => {
+      const code = respuesta?.authResponse?.code;
+      if (!code) {
+        mensaje.textContent = "La autorización fue cancelada o Meta no devolvió el permiso.";
+        return;
+      }
+      state.whatsappAlta.code = code;
+      terminarConexionWhatsapp();
+    }, {
+      config_id: alta.configuration_id,
+      response_type: "code",
+      override_default_response_type: true,
+      extras: {
+        setup: {},
+        featureType: alta.feature_type,
+        sessionInfoVersion: "3",
+      },
+    });
+  } catch (fallo) {
+    mensaje.textContent = fallo.message;
+  }
+}
+
+async function terminarConexionWhatsapp() {
+  const alta = state.whatsappAlta;
+  if (!alta.code || !alta.waba_id || alta.completando) return;
+  const mensaje = document.querySelector("#whatsapp-message");
+  alta.completando = true;
+  renderWhatsapp();
+  mensaje.textContent = "Meta autorizó el número. Asignándolo al agente QuantumHive…";
+  let resultadoFinal = "";
+  try {
+    const resultado = await api(rutaDelTenant("/canales/whatsapp/onboarding/completar"), {
       method: "POST",
       body: JSON.stringify({
-        phone_number_id: datos.get("phone_number_id"),
-        nombre: datos.get("nombre"),
-        confirmar,
+        code: alta.code,
+        waba_id: alta.waba_id,
+        phone_number_id: alta.phone_number_id,
       }),
     });
     state.whatsapp = resultado.canal;
-    renderWhatsapp();
+    resultadoFinal = `WhatsApp ${resultado.canal.numero || ""} conectado al agente ${state.tenant.nombre}.`;
   } catch (fallo) {
-    mensaje.textContent = fallo.message;
+    resultadoFinal = fallo.message;
+  } finally {
+    alta.completando = false;
+    alta.code = "";
+    renderWhatsapp();
+    mensaje.textContent = resultadoFinal;
   }
 }
 
@@ -957,12 +1304,12 @@ async function probarAgente(evento) {
   renderChat();
 
   try {
-    if (!state.session || !state.tenant) throw new Error("Ingresá para probar el brain real de QuantumHive.");
+    if (!state.session || !state.tenant) throw new Error("Ingresá para probar el brain real del negocio.");
     const historial = state.mensajes
       .filter((mensaje) => !mensaje.pendiente)
       .slice(-20, -1)
       .map((mensaje) => ({ rol: mensaje.rol, texto: mensaje.texto }));
-    const respuesta = await api("/api/panel/quantumhive/chat", {
+    const respuesta = await api(rutaDelTenant("/chat"), {
       method: "POST",
       body: JSON.stringify({ mensaje: texto, historial, modo: "cliente" }),
     });
@@ -990,13 +1337,14 @@ async function start() {
   bind();
   actualizarNucleo();
   actualizarLogo();
+  await cargarEstadoPerfilador();
   await cargarVoces();
   if (supabase) {
     const { data } = await supabase.auth.getSession();
     if (data.session) {
       state.session = data.session;
       try {
-        await cargarQuantumHive();
+        await cargarTenantActual();
       } catch {
         await supabase.auth.signOut();
         state.session = null;

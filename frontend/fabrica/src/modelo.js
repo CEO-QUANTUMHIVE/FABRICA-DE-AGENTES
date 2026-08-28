@@ -27,6 +27,77 @@ export function normalizarPerfil(perfil = {}) {
   };
 }
 
+function texto(valor) {
+  return String(valor || "").trim();
+}
+
+function lista(valor) {
+  return Array.isArray(valor) ? valor.map(texto).filter(Boolean) : [];
+}
+
+export function integrarInvestigacion(perfil, paquete = {}) {
+  const actual = normalizarPerfil(perfil);
+  const investigacionActual = actual.investigacion && typeof actual.investigacion === "object"
+    ? actual.investigacion
+    : {};
+  const negocioAnterior = investigacionActual.negocio && typeof investigacionActual.negocio === "object"
+    ? investigacionActual.negocio
+    : {};
+  const marcaAnterior = investigacionActual.marca && typeof investigacionActual.marca === "object"
+    ? investigacionActual.marca
+    : {};
+  const negocio = paquete?.negocio && typeof paquete.negocio === "object"
+    ? { ...negocioAnterior, ...paquete.negocio }
+    : negocioAnterior;
+  const servicios = lista(paquete?.servicios);
+  const precios = lista(paquete?.precios);
+  const ofertaEncontrada = [
+    servicios.length ? `Servicios: ${servicios.join(", ")}` : "",
+    precios.length ? `Precios publicados: ${precios.join(", ")}` : "",
+  ].filter(Boolean).join("\n");
+  return normalizarPerfil({
+    ...actual,
+    nombre: texto(negocio.nombre) || actual.nombre,
+    rubro: texto(negocio.categoria) || actual.rubro,
+    oferta: ofertaEncontrada || actual.oferta,
+    investigacion: {
+      negocio,
+      servicios,
+      precios,
+      horarios: texto(paquete?.horarios),
+      preguntas_frecuentes: Array.isArray(paquete?.preguntas_frecuentes) ? paquete.preguntas_frecuentes : [],
+      marca: paquete?.marca && typeof paquete.marca === "object"
+        ? { ...marcaAnterior, ...paquete.marca }
+        : marcaAnterior,
+      competidores: lista(paquete?.competidores),
+    },
+  });
+}
+
+export function editarInvestigacion(perfil, cambios = {}) {
+  const actual = normalizarPerfil(perfil);
+  const investigacion = actual.investigacion && typeof actual.investigacion === "object"
+    ? actual.investigacion
+    : {};
+  const negocio = investigacion.negocio && typeof investigacion.negocio === "object"
+    ? investigacion.negocio
+    : {};
+  return integrarInvestigacion(actual, {
+    ...investigacion,
+    ...cambios,
+    negocio: {
+      ...negocio,
+      ...(cambios.negocio && typeof cambios.negocio === "object" ? cambios.negocio : {}),
+    },
+    servicios: Object.hasOwn(cambios, "servicios") ? cambios.servicios : investigacion.servicios,
+    precios: Object.hasOwn(cambios, "precios") ? cambios.precios : investigacion.precios,
+    horarios: Object.hasOwn(cambios, "horarios") ? cambios.horarios : investigacion.horarios,
+    preguntas_frecuentes: Object.hasOwn(cambios, "preguntas_frecuentes")
+      ? cambios.preguntas_frecuentes
+      : investigacion.preguntas_frecuentes,
+  });
+}
+
 function nivel(valor, bajo, medio, alto) {
   if (valor >= 75) return alto;
   if (valor >= 40) return medio;
@@ -58,11 +129,11 @@ export function instruccionDePersonalidad(perfil) {
 
 export function armarPiezasConocimiento(perfil) {
   const p = normalizarPerfil(perfil);
-  return [
+  const piezas = [
     {
       categoria: "otro",
       clave: "fabrica-identidad",
-      titulo: "Identidad de QuantumHive",
+      titulo: `Identidad de ${p.nombre}`,
       contenido: { nombre: p.nombre, rubro: p.rubro, promesa: p.promesa },
     },
     {
@@ -95,6 +166,67 @@ export function armarPiezasConocimiento(perfil) {
       contenido: { instruccion: p.limites },
     },
   ];
+  const investigacion = p.investigacion;
+  if (!investigacion || typeof investigacion !== "object") return piezas;
+
+  const negocio = investigacion.negocio && typeof investigacion.negocio === "object"
+    ? investigacion.negocio
+    : {};
+  const marca = investigacion.marca && typeof investigacion.marca === "object"
+    ? investigacion.marca
+    : {};
+  const datosPublicos = Object.fromEntries(Object.entries({
+    direccion: negocio.direccion,
+    ciudad: negocio.ciudad,
+    telefono: negocio.telefono,
+    whatsapp: negocio.whatsapp,
+    email: negocio.email,
+    web: negocio.web,
+    instagram: negocio.instagram,
+    facebook: negocio.facebook,
+    url_maps: negocio.url_maps,
+  }).filter(([, valor]) => texto(valor)));
+  if (Object.keys(datosPublicos).length || texto(marca.logo_url) || lista(marca.colores).length) {
+    piezas.push({
+      categoria: "otro",
+      clave: "fabrica-datos-publicos",
+      titulo: "Datos públicos y marca",
+      contenido: { ...datosPublicos, marca: { logo_url: marca.logo_url || "", colores: lista(marca.colores) } },
+    });
+  }
+  if (lista(investigacion.servicios).length) {
+    piezas.push({
+      categoria: "servicio",
+      clave: "fabrica-servicios-investigados",
+      titulo: "Servicios encontrados en fuentes públicas",
+      contenido: { servicios: lista(investigacion.servicios) },
+    });
+  }
+  if (lista(investigacion.precios).length) {
+    piezas.push({
+      categoria: "precio",
+      clave: "fabrica-precios-investigados",
+      titulo: "Precios publicados",
+      contenido: { precios: lista(investigacion.precios) },
+    });
+  }
+  if (texto(investigacion.horarios)) {
+    piezas.push({
+      categoria: "horario",
+      clave: "fabrica-horarios-investigados",
+      titulo: "Horarios publicados",
+      contenido: { horarios: texto(investigacion.horarios) },
+    });
+  }
+  if (Array.isArray(investigacion.preguntas_frecuentes) && investigacion.preguntas_frecuentes.length) {
+    piezas.push({
+      categoria: "faq",
+      clave: "fabrica-faq-investigadas",
+      titulo: "Preguntas frecuentes encontradas",
+      contenido: { preguntas: investigacion.preguntas_frecuentes },
+    });
+  }
+  return piezas;
 }
 
 export function slugDeNombre(nombre) {

@@ -90,8 +90,11 @@ class Config:
     # NO vive aca: va al almacen de secretos y `tenant_canales` guarda solo la
     # referencia. Con default para que un despliegue viejo no deje de arrancar
     # por no tenerlos; el webhook falla cerrado si estan vacios.
+    meta_app_id: str = ""
     meta_app_secret: str = ""
+    meta_embedded_signup_config_id: str = ""
     whatsapp_verify_token: str = ""
+    whatsapp_registration_pin: str = ""
     whatsapp_api_version: str = "v21.0"
     # El boton rojo. Corta las respuestas automaticas de TODOS los tenants sin
     # tocar la base ni desconectar canales. Existe para el momento en que algo
@@ -100,6 +103,10 @@ class Config:
     # Credencial maquina-a-maquina del plano de control. Vacia = las rutas del
     # CEO existen pero fallan cerradas; nunca se reutiliza una clave de voz.
     quantumcore_token: str = ""
+    # Servicio server-to-server que investiga la web y las redes públicas del
+    # negocio. El token nunca se expone al frontend de la Fábrica.
+    centro_inteligencia_url: str = ""
+    centro_inteligencia_token: str = ""
 
 
 def cargar(entorno: dict[str, str] | None = None) -> Config:
@@ -165,8 +172,13 @@ def cargar(entorno: dict[str, str] | None = None) -> Config:
         supabase_service_role_key=(
             e.get("SUPABASE_SERVICE_ROLE_KEY") or e.get("SUPABASE_SECRET_KEY") or ""
         ).strip(),
+        meta_app_id=e.get("META_APP_ID", "").strip(),
         meta_app_secret=e.get("META_APP_SECRET", "").strip(),
+        meta_embedded_signup_config_id=e.get(
+            "META_EMBEDDED_SIGNUP_CONFIG_ID", ""
+        ).strip(),
         whatsapp_verify_token=e.get("WHATSAPP_VERIFY_TOKEN", "").strip(),
+        whatsapp_registration_pin=e.get("WHATSAPP_REGISTRATION_PIN", "").strip(),
         # Fijada explicita. "la ultima" cambia sola y rompe sin aviso.
         whatsapp_api_version=e.get("WHATSAPP_API_VERSION", "v21.0").strip(),
         # Se lista lo que APAGA, no lo que enciende: asi un valor mal escrito
@@ -177,4 +189,6 @@ def cargar(entorno: dict[str, str] | None = None) -> Config:
             not in {"off", "no", "false", "0"}
         ),
         quantumcore_token=e.get("QUANTUMCORE_TOKEN", "").strip(),
+        centro_inteligencia_url=e.get("CENTRO_INTELIGENCIA_URL", "").strip(),
+        centro_inteligencia_token=e.get("CENTRO_INTELIGENCIA_TOKEN", "").strip(),
     )

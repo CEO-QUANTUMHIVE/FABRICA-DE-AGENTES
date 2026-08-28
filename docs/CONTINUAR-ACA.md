@@ -1,5 +1,58 @@
 # Brief de continuación — Motor de Voz
 
+> ## ⚡ Estado al 2026-08-24 — Perfilador conectado a la Fábrica
+>
+> Se integró el repo `INTELIGENCIA-COMERCIAL-SCRAP` sin copiarlo ni modificarlo:
+>
+> - la Fábrica llama `POST /clientes/investigar` desde su backend;
+> - el token interno nunca llega al navegador;
+> - el autoguiado acepta web, Instagram, Facebook y Google Maps;
+> - servicios, precios, horarios, preguntas frecuentes y datos públicos se
+>   transforman en piezas versionadas del conocimiento del tenant;
+> - el logo y los colores encontrados se aplican al orbe y se recuperan desde
+>   el conocimiento publicado al volver a iniciar sesión;
+> - una caída del Perfilador no rompe el brain, voz, panel ni WhatsApp;
+> - **449 tests backend + 5 frontend en verde** y build Vite correcto.
+>
+> Para encenderlo en producción faltan solamente tres pasos operativos:
+>
+> 1. desplegar el Perfilador con su `TOKEN_INTERNO` y una URL HTTPS privada;
+> 2. cargar esa URL y token como `CENTRO_INTELIGENCIA_URL` y
+>    `CENTRO_INTELIGENCIA_TOKEN` en el backend de la Fábrica;
+> 3. desplegar API y frontend de la Fábrica.
+>
+> Procedimiento: [`procesos/conectar-perfilador.md`](procesos/conectar-perfilador.md).
+
+> ## ⚡ Estado al 2026-08-23 — reemplaza las decisiones viejas sobre BSP
+>
+> Se eligió **infraestructura propia, directo con Meta**, sin YCloud ni
+> 360dialog. Ya está implementado Embedded Signup con Coexistencia en el panel:
+>
+> - botón **Conectar mi WhatsApp Business**;
+> - código temporal canjeado únicamente en el backend;
+> - descubrimiento y validación del número dentro del WABA autorizado;
+> - registro del número y suscripción del webhook;
+> - token en bóveda privada de la VM (`WHATSAPP_SECRET_DIR`, archivo `0600`),
+>   nunca en navegador ni Supabase;
+> - asociación global segura `phone_number_id → tenant`, sin reasignar números;
+> - **443 tests backend en verde**, 4 del frontend y build Vite correcto.
+>
+> Lo que falta para probar con el número real ya no se resuelve programando:
+>
+> 1. Sergio entra manualmente a Meta; ningún agente opera esa cuenta.
+> 2. QuantumHive crea/recupera su app, completa Business Verification y Tech
+>    Provider, y crea la configuración de Embedded Signup.
+> 3. En la VM se cargan `META_APP_ID`, `META_APP_SECRET`,
+>    `META_EMBEDDED_SIGNUP_CONFIG_ID`, `WHATSAPP_VERIFY_TOKEN`,
+>    `WHATSAPP_REGISTRATION_PIN` y `WHATSAPP_SECRET_DIR`.
+> 4. Publicar `/webhooks/whatsapp` en Caddy, desplegar API + worker y verificar
+>    el campo `messages` en Meta.
+> 5. Sergio pulsa el botón del panel y autoriza su número. Conserva el número y
+>    la app de WhatsApp Business mediante Coexistencia.
+>
+> Meta sigue siendo obligatoria y puede cobrar sus conversaciones. Lo que esta
+> arquitectura elimina es el software y abono mensual de un BSP intermediario.
+
 > ## ⚡ Estado al 2026-08-16 — leé esto primero
 >
 > **Todo lo de abajo sigue valiendo, pero esto es lo último y lo que manda.**
@@ -16,6 +69,20 @@
 > | Landing + panel | ✅ revisión `landing-quantumhive-00040-xmc` |
 > | Canal WhatsApp | ✅ código completo: parser, firma, webhook, cerebro, colas, envío, worker, topes |
 > | Tests | ✅ **398 en verde** |
+>
+> ### Circuito vendible: verificado de punta a punta el 2026-08-16
+>
+> Se corrió contra producción y la base real. **398 tests en verde**, 8 smoke de
+> base real, 4 de voces, API viva, panel y widget servidos, el tenant resuelto
+> por dominio, y las rutas del panel y la fábrica respondiendo 401 (existen y
+> exigen sesión) en lo desplegado. Detalle y evidencia en
+> [`resultados/circuito-vendible-verificado.md`](resultados/circuito-vendible-verificado.md).
+>
+> **Falta un solo paso, y es de una persona:** entrar al panel, enseñarle algo,
+> publicarlo y escucharlo en el widget. Cinco minutos, sin código.
+>
+> Confirmado de paso: `GET /webhooks/whatsapp` da **404** en producción — falta
+> la regla de Caddy para `/webhooks/*`.
 >
 > ### Cómo se aplican migraciones ahora
 >
@@ -51,21 +118,53 @@
 > firma; parser, cerebro, colas, límites y aislamiento quedan igual. Volver a
 > Meta directo el día que salga Tech Provider es cambiar esa línea al revés.
 >
-> ### Estado en Meta
+> ### 🚫 Estado en Meta — LA CUENTA ESTÁ DESHABILITADA
 >
-> - Portfolio `QuantumHive` creado — `business_id 1079094061364956`, **sin
->   verificar** y **con los datos del negocio vacíos**.
-> - App `quantumhive`: **sin confirmar** si se creó. Facebook tiró un checkpoint
->   al automatizar el navegador. **No manejar Meta por automatización.**
-> - Sergio tiene **CUIT y monotributo**, así que puede verificar. 2-5 días.
+> **El 2026-08-16 Meta deshabilitó la cuenta personal de Facebook de Sergio por
+> "integridad de la cuenta", y la pantalla dice que no hay más revisión.** Pasó
+> después de que un agente le automatizara el navegador sobre
+> `developers.facebook.com`: primero saltó un checkpoint, y la cuenta cayó
+> igual poco después.
+>
+> **NUNCA manejar cuentas de Meta con automatización de navegador.** Ni para
+> mirar. Esta regla costó una cuenta de años.
+>
+> **Tampoco abrir una segunda cuenta desde el mismo equipo/IP para seguir donde
+> quedó la primera:** Meta lo llama evasión, vincula por dispositivo, navegador,
+> IP y teléfono, y el resultado normal es perder las dos.
+>
+> - Portfolio `QuantumHive` (`business_id 1079094061364956`): entidad separada
+>   de la cuenta personal, **estado desconocido**. Si sobrevivió, se recupera
+>   sumándole otro administrador; si Sergio era el único admin, puede haber
+>   quedado inaccesible.
+> - App `quantumhive`: sin confirmar si llegó a crearse.
+> - Sergio tiene **CUIT y monotributo**, así que la verificación sigue siendo
+>   posible el día que haya una cuenta con la que hacerla.
+>
+> Caminos limpios, en orden de preferencia:
+>
+> 1. Bajar "Descargar tu información" antes de que se pierda.
+> 2. Apelar por fuera del botón: formulario de cuentas deshabilitadas y, si
+>    hubo actividad comercial, soporte de Meta Business.
+> 3. Que **otra persona real** del entorno (socio, familiar que trabaje con él),
+>    con cuenta vieja y legítima, sea la titular del portfolio y agregue a
+>    Sergio como administrador. Eso no es evasión: es otra titularidad.
 >
 > ### Lo próximo, en orden
 >
-> 1. Completar datos del portfolio de Meta (5 min, de Sergio).
-> 2. Onboarding de coexistencia en 360dialog con el número real.
-> 3. Escribir `channels/whatsapp/cliente_360.py` + su verificación de webhook.
-> 4. Regla de Caddy para `/webhooks/*` — hoy da 404 — y systemd del worker.
-> 5. Handoff: contestar desde el panel.
+> **Todo lo de WhatsApp está bloqueado hasta resolver el acceso a Meta.** No es
+> una traba de código: el código está completo y en verde.
+>
+> 1. Resolver el acceso a Meta (ver arriba). Bloquea 2 y 3.
+> 2. Completar datos del portfolio de Meta (5 min, de Sergio).
+> 3. Onboarding de coexistencia en 360dialog con el número real.
+> 4. Escribir `channels/whatsapp/cliente_360.py` + su verificación de webhook.
+> 5. Regla de Caddy para `/webhooks/*` — hoy da 404 — y systemd del worker.
+> 6. Handoff: contestar desde el panel.
+>
+> **Lo que sí se puede avanzar sin Meta:** el widget de voz en la web ya
+> funciona y es el producto original; los canales que no pasan por Meta
+> (Telegram) usan el mismo cerebro y las mismas colas.
 >
 > ### Pendientes de seguridad
 >
@@ -791,7 +890,7 @@ Del `CLAUDE.md` de la bóveda y del contexto maestro:
 ## 8. Cómo levantar todo en local
 
 ```bash
-cd "C:\Users\sergio\Desktop\MOTOR-DE-VOZ"; .\arrancar.ps1
+cd "C:\Users\sergio\Desktop\FABRICA-DE-AGENTES"; .\arrancar.ps1
 ```
 
 Abre las cuatro ventanas, genera el token y abre el navegador. Los errores
@@ -808,3 +907,27 @@ salen en la ventana **AGENTE**.
 | Instalar el agente en un cliente | `docs/instalar-el-agente-en-una-landing.md` |
 | Clonar una voz | `docs/voces/registro-de-consentimiento.md` |
 | Buscar cualquier cosa en el código | `graphify query "..."` |
+
+---
+
+## 10. CEO departamental de Fábrica de Agentes — 2026-08-20
+
+- El CEO de este checkout ahora se identifica como `fabrica-de-agentes`; ya
+  no ocupa la identidad `motor-de-voz`.
+- Ruta de descripción:
+  `GET /v1/departamentos/fabrica-de-agentes/descripcion`.
+- Consultas y acciones conservan `POST /v1/consultas` y
+  `POST /v1/acciones`.
+- QuantumCore incorpora un adaptador específico para este contrato. El
+  adaptador genérico de OpenCode no es compatible con el cuerpo HTTP de este
+  CEO.
+- Verificación local real: registro productivo `saludable`, descripción y
+  consulta `arquitectura` de solo lectura con correlación; costo USD 0 y cero
+  acciones.
+- Suite después del cambio: `427 passed, 15 deselected`.
+- No se guardó ningún `QUANTUMCORE_TOKEN`: la prueba usó uno efímero y lo
+  descartó al cerrar la API local.
+- No se hizo commit, push ni despliegue. Los workers siguen declarados pero no
+  conectados; una acción válida continúa fallando cerrada con
+  `worker_no_conectado`.
+- Contrato vigente: [`ceo-fabrica-de-agentes.md`](ceo-fabrica-de-agentes.md).

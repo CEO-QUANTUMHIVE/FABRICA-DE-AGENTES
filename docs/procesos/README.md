@@ -10,6 +10,8 @@ documento existe porque algo costó horas la primera vez.
 | [Probar un tenant a oído](probar-un-tenant-a-oido.md) | Hay que validar que cada negocio suene como el suyo |
 | [Aplicar una migración de Supabase](aplicar-una-migracion-de-supabase.md) | Cambia el esquema o los datos semilla |
 | [Diagnosticar un 401](credenciales-y-401.md) | Una credencial falla y no se entiende por qué |
+| [Conectar un WhatsApp al agente](conectar-whatsapp.md) | Un negocio tiene que atender por WhatsApp |
+| [Conectar el Perfilador de Clientes](conectar-perfilador.md) | La Fábrica debe investigar y precargar un negocio |
 | [Desplegar](desplegar.md) | Hay que subir cambios a producción |
 
 ## La regla que vale para todos

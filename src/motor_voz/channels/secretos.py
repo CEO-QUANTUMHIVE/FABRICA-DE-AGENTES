@@ -5,14 +5,13 @@ comment esta en la migracion y es deliberado: la tabla la lee el panel, se
 copia a entornos de prueba y aparece en cualquier dump. Un token de WhatsApp
 ahi dentro es un token filtrado.
 
-Hoy la referencia se resuelve contra variables de entorno del worker:
+La referencia primero se resuelve contra variables de entorno del worker:
 
     secreto_ref = "whatsapp_quantumhive"  ->  SECRETO_WHATSAPP_QUANTUMHIVE
 
-Alcanza mientras los canales los damos de alta nosotros y corren en una VM.
-Cuando entre Embedded Signup y los tokens los emita cada cliente, esto pasa a
-Secret Manager: cambia este modulo y nada mas, porque nadie fuera de aca sabe
-como se guarda un secreto.
+Para Embedded Signup, el token se guarda en una carpeta privada y persistente
+de nuestra VM (`WHATSAPP_SECRET_DIR`). Asi no depende de un proveedor externo,
+no entra en la base y el resto del motor sigue viendo solo `secreto_ref`.
 """
 
 from __future__ import annotations
@@ -20,10 +19,13 @@ from __future__ import annotations
 import logging
 import os
 import re
+import tempfile
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
 PREFIJO = "SECRETO_"
+VARIABLE_DIRECTORIO = "WHATSAPP_SECRET_DIR"
 _NO_ALFANUMERICO = re.compile(r"[^A-Za-z0-9]+")
 
 
@@ -31,10 +33,65 @@ class SecretoNoEncontrado(RuntimeError):
     """La referencia no resuelve a ningun secreto configurado."""
 
 
+class AlmacenNoConfigurado(RuntimeError):
+    """No hay una carpeta privada configurada para guardar tokens nuevos."""
+
+
+def almacen_configurado(entorno: dict[str, str] | None = None) -> bool:
+    e = os.environ if entorno is None else entorno
+    return bool((e.get(VARIABLE_DIRECTORIO) or "").strip())
+
+
 def nombre_de_variable(secreto_ref: str) -> str:
     """La variable de entorno que corresponde a una referencia."""
     limpio = _NO_ALFANUMERICO.sub("_", secreto_ref.strip()).strip("_")
     return f"{PREFIJO}{limpio.upper()}"
+
+
+def _ruta_del_secreto(secreto_ref: str, entorno: dict[str, str]) -> Path:
+    directorio = (entorno.get(VARIABLE_DIRECTORIO) or "").strip()
+    if not directorio:
+        raise AlmacenNoConfigurado(
+            f"falta {VARIABLE_DIRECTORIO}; configure una carpeta privada persistente"
+        )
+    nombre = nombre_de_variable(secreto_ref).lower() + ".token"
+    return Path(directorio).expanduser().resolve() / nombre
+
+
+def guardar(
+    secreto_ref: str,
+    token: str,
+    entorno: dict[str, str] | None = None,
+) -> None:
+    """Guarda un token de manera atomica y con permisos solo para el worker."""
+    if not secreto_ref or not secreto_ref.strip():
+        raise ValueError("secreto_ref no puede estar vacio")
+    if not token or not token.strip():
+        raise ValueError("el token no puede estar vacio")
+
+    e = dict(os.environ) if entorno is None else entorno
+    destino = _ruta_del_secreto(secreto_ref, e)
+    destino.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        os.chmod(destino.parent, 0o700)
+    except OSError:
+        logger.debug("el sistema no permite ajustar permisos del almacen")
+
+    descriptor, temporal = tempfile.mkstemp(
+        dir=destino.parent,
+        prefix=f".{destino.name}.",
+    )
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as archivo:
+            archivo.write(token.strip())
+        try:
+            os.chmod(temporal, 0o600)
+        except OSError:
+            logger.debug("el sistema no permite ajustar permisos del secreto")
+        os.replace(temporal, destino)
+    finally:
+        if os.path.exists(temporal):
+            os.unlink(temporal)
 
 
 def resolver(secreto_ref: str | None, entorno: dict[str, str] | None = None) -> str:
@@ -50,8 +107,18 @@ def resolver(secreto_ref: str | None, entorno: dict[str, str] | None = None) -> 
 
     variable = nombre_de_variable(secreto_ref)
     valor = (e.get(variable) or "").strip()
-    if not valor:
-        raise SecretoNoEncontrado(
-            f"falta la variable {variable} para el secreto '{secreto_ref}'"
-        )
-    return valor
+    if valor:
+        return valor
+
+    try:
+        ruta = _ruta_del_secreto(secreto_ref, e)
+    except AlmacenNoConfigurado:
+        ruta = None
+    if ruta and ruta.is_file():
+        valor = ruta.read_text(encoding="utf-8").strip()
+        if valor:
+            return valor
+
+    raise SecretoNoEncontrado(
+        f"no hay credencial configurada para el secreto '{secreto_ref}'"
+    )

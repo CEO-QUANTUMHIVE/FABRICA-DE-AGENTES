@@ -88,6 +88,23 @@ Azure. No explotó de casualidad, porque los procesos ya estaban corriendo y el
 `.env` solo se lee al arrancar. El primer reinicio hubiera dejado la landing
 sin agente.
 
+### Prohibido también: tocar cuentas de Meta con el navegador automatizado
+
+**Nunca manejar Facebook, Meta Business, `developers.facebook.com` ni
+WhatsApp Manager con automatización de navegador.** Ni para leer, ni "un
+click", ni con la sesión ya abierta. Si hace falta algo ahí, se le dictan
+los pasos a Sergio y los hace él a mano.
+
+Pasó el 2026-08-16: un agente navegó `developers.facebook.com` automatizado.
+Saltó un checkpoint, y poco después Meta deshabilitó la cuenta personal de
+Sergio —de años— por "integridad de la cuenta", sin apelación. El portfolio
+`QuantumHive` (`1079094061364956`) puede haber quedado inaccesible y todo el
+canal de WhatsApp quedó bloqueado, con el código terminado y en verde.
+
+Corolario: **no abrir una cuenta nueva para hacer lo que la vieja tenía
+prohibido.** Meta lo llama evasión y vincula por dispositivo, IP y teléfono;
+el final normal es perder las dos.
+
 ### Lo que sí se puede, siempre
 
 Leer todo. Correr los tests, que no llaman a ninguna API ni gastan un peso.
