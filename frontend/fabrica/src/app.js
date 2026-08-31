@@ -4,9 +4,12 @@ import "./app.css";
 import {
   PERFIL_QUANTUMHIVE,
   armarPiezasConocimiento,
+  cerrarRecorrido,
   editarInvestigacion,
+  hallazgosGenerales,
   integrarInvestigacion,
   normalizarPerfil,
+  objetivosDeInvestigacion,
   promptDesdeFicha,
   progresoDelPerfil,
   slugDeNombre,
@@ -46,6 +49,7 @@ const state = {
   whatsappDisponible: true,
   whatsappOnboarding: null,
   whatsappAlta: { code: "", waba_id: "", phone_number_id: "", completando: false },
+  scout: { objetivos: [], activo: -1, corriendo: false, generales: [], reloj: null },
   publicando: false,
   voz: {
     motor: "pipeline",
@@ -329,6 +333,19 @@ function plantilla() {
           </div>
         </div>
         <div class="chat-machine">
+          <div class="scout" id="scout" hidden>
+            <div class="scout__chrome">
+              <i></i><i></i><i></i>
+              <span class="scout__url" id="scout-url">esperando una web o una red…</span>
+            </div>
+            <div class="scout__viewport">
+              <div class="scout__page" id="scout-page" data-tipo="vacio"></div>
+              <span class="scout__beam" id="scout-beam"></span>
+              <span class="scout__agent" id="scout-agent" aria-hidden="true">✦</span>
+            </div>
+            <ul class="scout__sources" id="scout-sources"></ul>
+            <small class="scout__note" id="scout-note">Cargá la web o las redes y el investigador entra a mirarlas.</small>
+          </div>
           <div class="chat-log" id="interview-log" aria-live="polite"></div>
           <form class="chat-form" id="interview-form">
             <input name="mensaje" autocomplete="off" maxlength="2000" placeholder="Respondé con tus palabras…" />
@@ -483,7 +500,12 @@ function bind() {
   document.querySelector("#login-form").addEventListener("submit", ingresar);
   document.querySelector("#chat-form").addEventListener("submit", probarAgente);
   document.querySelector("#interview-form").addEventListener("submit", continuarEntrevista);
-  document.querySelector("#research-form").addEventListener("submit", investigarNegocio);
+  const formularioInvestigacion = document.querySelector("#research-form");
+  formularioInvestigacion.addEventListener("submit", investigarNegocio);
+  formularioInvestigacion.addEventListener("input", (evento) => {
+    if (["web", "instagram", "facebook", "url_maps"].includes(evento.target.name)) refrescarScout();
+  });
+  refrescarScout();
   document.querySelector("#save-research-button").addEventListener("click", guardarInvestigacionManual);
   document.querySelector("#use-interview-button").addEventListener("click", pasarEntrevistaAlLaboratorio);
   document.querySelector("#draft-button").addEventListener("click", abrirBorrador);
@@ -987,6 +1009,119 @@ async function cargarEstadoPerfilador() {
   }
 }
 
+/* ── El visor del investigador ──────────────────────────────────────────────
+   Muestra al agente entrando a cada fuente que cargó el dueño. El recorrido
+   marca el ritmo mientras el backend trabaja, pero los resultados salen del
+   paquete real: si el Perfilador se cae, ninguna fuente queda en verde.
+   ────────────────────────────────────────────────────────────────────────── */
+
+const ESQUELETOS = {
+  web: `<span class="sk sk--barra"></span><span class="sk sk--titulo"></span>
+        <span class="sk sk--linea"></span><span class="sk sk--linea sk--corta"></span>
+        <div class="sk-fila"><span class="sk sk--bloque"></span><span class="sk sk--bloque"></span><span class="sk sk--bloque"></span></div>`,
+  instagram: `<div class="sk-perfil"><span class="sk sk--avatar"></span>
+        <div class="sk-datos"><span class="sk sk--titulo"></span><span class="sk sk--linea sk--corta"></span></div></div>
+        <div class="sk-grilla"><i></i><i></i><i></i><i></i><i></i><i></i></div>`,
+  facebook: `<span class="sk sk--portada"></span>
+        <div class="sk-perfil"><span class="sk sk--avatar"></span>
+        <div class="sk-datos"><span class="sk sk--titulo"></span><span class="sk sk--linea sk--corta"></span></div></div>
+        <span class="sk sk--linea"></span><span class="sk sk--linea sk--corta"></span>`,
+  url_maps: `<div class="sk-mapa"><span class="sk-pin">◈</span></div>
+        <span class="sk sk--titulo"></span><span class="sk sk--linea sk--corta"></span>`,
+  vacio: `<span class="sk sk--linea"></span><span class="sk sk--linea sk--corta"></span>`,
+};
+
+function entradasDeInvestigacion() {
+  const formulario = document.querySelector("#research-form");
+  if (!formulario) return {};
+  const datos = new FormData(formulario);
+  return {
+    web: datos.get("web"),
+    instagram: datos.get("instagram"),
+    facebook: datos.get("facebook"),
+    url_maps: datos.get("url_maps"),
+  };
+}
+
+function refrescarScout() {
+  if (state.scout.corriendo) return;
+  const previos = new Map(state.scout.objetivos.map((o) => [o.clave, o]));
+  state.scout.objetivos = objetivosDeInvestigacion(entradasDeInvestigacion()).map((objetivo) => {
+    const previo = previos.get(objetivo.clave);
+    const mismoDestino = previo && previo.destino === objetivo.destino;
+    return mismoDestino ? { ...objetivo, estado: previo.estado, hallazgos: previo.hallazgos || [] } : { ...objetivo, estado: "pendiente", hallazgos: [] };
+  });
+  renderScout();
+}
+
+function renderScout() {
+  const visor = document.querySelector("#scout");
+  if (!visor) return;
+  const { objetivos, activo, corriendo, generales } = state.scout;
+  visor.hidden = objetivos.length === 0;
+  if (!objetivos.length) return;
+
+  const enFoco = corriendo && activo >= 0 ? objetivos[activo] : null;
+  visor.dataset.estado = corriendo ? "visitando" : "quieto";
+
+  const url = document.querySelector("#scout-url");
+  url.textContent = enFoco ? enFoco.destino : `${objetivos.length} fuente${objetivos.length > 1 ? "s" : ""} para revisar`;
+
+  const pagina = document.querySelector("#scout-page");
+  const tipo = enFoco ? enFoco.clave : "vacio";
+  if (pagina.dataset.tipo !== tipo) {
+    pagina.dataset.tipo = tipo;
+    pagina.innerHTML = ESQUELETOS[tipo] || ESQUELETOS.vacio;
+  }
+
+  document.querySelector("#scout-sources").innerHTML = objetivos
+    .map((objetivo, indice) => {
+      const foco = corriendo && indice === activo;
+      const estado = foco ? "visitando" : objetivo.estado || "pendiente";
+      const detalle = (objetivo.hallazgos || []).join(" · ");
+      const leyenda = {
+        visitando: "mirando el perfil…",
+        encontrado: detalle,
+        "sin-datos": "sin datos públicos",
+        fallo: "no se pudo entrar",
+        pendiente: "en la cola",
+      }[estado];
+      return `<li class="scout-src" data-estado="${estado}">
+        <span class="scout-src__icono">${objetivo.icono}</span>
+        <span class="scout-src__texto"><b>${escapeHtml(objetivo.destino)}</b><small>${escapeHtml(leyenda || "")}</small></span>
+      </li>`;
+    })
+    .join("");
+
+  const nota = document.querySelector("#scout-note");
+  if (corriendo) nota.textContent = "El investigador corre en el servidor. Tu navegador nunca ve el token.";
+  else if (generales?.length) nota.textContent = `Además, sin poder atribuirlo a una fuente: ${generales.join(", ")}.`;
+  else nota.textContent = "Cargá la web o las redes y el investigador entra a mirarlas.";
+}
+
+function arrancarRecorrido() {
+  const objetivos = state.scout.objetivos;
+  if (!objetivos.length) return;
+  state.scout.corriendo = true;
+  state.scout.activo = 0;
+  state.scout.generales = [];
+  renderScout();
+  state.scout.reloj = window.setInterval(() => {
+    state.scout.activo = (state.scout.activo + 1) % state.scout.objetivos.length;
+    renderScout();
+  }, 1700);
+}
+
+function cerrarRecorridoVisual(paquete, fallo) {
+  window.clearInterval(state.scout.reloj);
+  state.scout.reloj = null;
+  state.scout.corriendo = false;
+  state.scout.activo = -1;
+  state.scout.objetivos = cerrarRecorrido(state.scout.objetivos, paquete, fallo);
+  state.scout.generales = fallo ? [] : hallazgosGenerales(paquete || {});
+  renderScout();
+}
+
 async function investigarNegocio(evento) {
   evento.preventDefault();
   const formulario = evento.currentTarget;
@@ -1001,6 +1136,7 @@ async function investigarNegocio(evento) {
   boton.disabled = true;
   boton.textContent = "Investigando fuentes públicas…";
   mensaje.textContent = "Buscando web, redes, servicios, horarios y marca. Puede tardar hasta un minuto.";
+  arrancarRecorrido();
   try {
     const resultado = await apiPublica("/api/fabrica/investigar", {
       method: "POST",
@@ -1012,6 +1148,7 @@ async function investigarNegocio(evento) {
         url_maps: datos.get("url_maps"),
       }),
     });
+    cerrarRecorridoVisual(resultado.perfil, false);
     state.perfil = integrarInvestigacion(state.perfil, resultado.perfil);
     const negocio = resultado.perfil?.negocio || {};
     const servicios = resultado.perfil?.servicios || [];
@@ -1053,6 +1190,7 @@ async function investigarNegocio(evento) {
     renderEntrevista();
     mensaje.textContent = `Investigación aplicada a ${state.perfil.nombre}. Revisá lo encontrado y completá lo que falta con el guía.`;
   } catch (fallo) {
+    cerrarRecorridoVisual(null, true);
     mensaje.textContent = fallo.message;
   } finally {
     boton.textContent = "✦ Investigar mi negocio";

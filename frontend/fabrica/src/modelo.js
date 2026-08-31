@@ -267,3 +267,112 @@ export function progresoDelPerfil(perfil) {
   const completos = campos.filter(([valor, minimo]) => String(valor || "").trim().length >= minimo).length;
   return Math.round((completos / campos.length) * 100);
 }
+
+/* ── El recorrido del investigador ──────────────────────────────────────────
+   Lo que se ve en pantalla mientras el Perfilador trabaja. La animación marca
+   el ritmo, pero los hallazgos NO se inventan: cada uno sale de un campo real
+   del paquete que devolvió el servicio. Una fuente sin evidencia queda en
+   "sin datos", nunca en verde.
+   ────────────────────────────────────────────────────────────────────────── */
+
+export const FUENTES_INVESTIGACION = Object.freeze([
+  Object.freeze({ clave: "web", etiqueta: "Sitio web", icono: "🌐" }),
+  Object.freeze({ clave: "instagram", etiqueta: "Instagram", icono: "◉" }),
+  Object.freeze({ clave: "facebook", etiqueta: "Facebook", icono: "f" }),
+  Object.freeze({ clave: "url_maps", etiqueta: "Google Maps", icono: "◈" }),
+]);
+
+/** Convierte lo que escribió el dueño en algo corto y legible para el visor. */
+export function destinoLegible(clave, valor) {
+  const crudo = String(valor || "").trim();
+  if (!crudo) return "";
+  if (clave === "instagram" || clave === "facebook") {
+    const usuario = crudo
+      .replace(/^https?:\/\//i, "")
+      .replace(/^(www\.)?(instagram|facebook|fb)\.com\//i, "")
+      .replace(/^@/, "")
+      .split(/[/?#]/)[0]
+      .trim();
+    return usuario ? `@${usuario}` : "";
+  }
+  const dominio = crudo
+    .replace(/^https?:\/\//i, "")
+    .replace(/^www\./i, "")
+    .split(/[/?#]/)[0]
+    .trim();
+  return dominio;
+}
+
+/** Las fuentes que el dueño realmente cargó. Sin dato no hay visita. */
+export function objetivosDeInvestigacion(entradas = {}) {
+  return FUENTES_INVESTIGACION.map((fuente) => ({
+    ...fuente,
+    destino: destinoLegible(fuente.clave, entradas[fuente.clave]),
+  })).filter((fuente) => Boolean(fuente.destino));
+}
+
+/** Qué se encontró en cada fuente, leído del paquete real. */
+export function hallazgosPorFuente(paquete = {}) {
+  const negocio = paquete?.negocio || {};
+  const marca = paquete?.marca || {};
+  const hallazgos = { web: [], instagram: [], facebook: [], url_maps: [] };
+
+  if (negocio.texto_web) hallazgos.web.push("leyó la página");
+  if (negocio.web_funciona === false) hallazgos.web.push("la web no responde");
+  if (Array.isArray(negocio.tecnologias) && negocio.tecnologias.length) {
+    hallazgos.web.push(`${negocio.tecnologias.length} tecnologías`);
+  }
+  if (negocio.tiene_chatbot) hallazgos.web.push("ya tiene chatbot");
+  if (negocio.tiene_reservas_online) hallazgos.web.push("reservas online");
+
+  if (marca.bio_instagram) hallazgos.instagram.push("bio del perfil");
+  if (typeof marca.seguidores === "number") {
+    hallazgos.instagram.push(`${marca.seguidores} seguidores`);
+  }
+
+  if (marca.descripcion_facebook) hallazgos.facebook.push("descripción de la página");
+
+  if (typeof negocio.puntuacion_google === "number") {
+    hallazgos.url_maps.push(`${negocio.puntuacion_google} ★`);
+  }
+  if (typeof negocio.cantidad_resenas === "number") {
+    hallazgos.url_maps.push(`${negocio.cantidad_resenas} reseñas`);
+  }
+  if (negocio.direccion) hallazgos.url_maps.push("dirección");
+
+  return hallazgos;
+}
+
+/**
+ * Cierra el recorrido con lo que de verdad volvió.
+ * `fallo` marca todas las fuentes como no alcanzadas: si el servicio se cayó,
+ * ninguna se puede dar por visitada.
+ */
+export function cerrarRecorrido(objetivos = [], paquete = null, fallo = false) {
+  const hallazgos = fallo ? {} : hallazgosPorFuente(paquete || {});
+  return objetivos.map((objetivo) => {
+    if (fallo) return { ...objetivo, estado: "fallo", hallazgos: [] };
+    const encontrados = hallazgos[objetivo.clave] || [];
+    return {
+      ...objetivo,
+      estado: encontrados.length ? "encontrado" : "sin-datos",
+      hallazgos: encontrados,
+    };
+  });
+}
+
+/** Lo que se encontró pero no se le puede atribuir a una fuente puntual. */
+export function hallazgosGenerales(paquete = {}) {
+  const generales = [];
+  const servicios = paquete?.servicios || [];
+  const precios = paquete?.precios || [];
+  const preguntas = paquete?.preguntas_frecuentes || [];
+  if (servicios.length) generales.push(`${servicios.length} servicios`);
+  if (precios.length) generales.push(`${precios.length} precios`);
+  if (paquete?.horarios) generales.push("horarios");
+  if (preguntas.length) generales.push(`${preguntas.length} preguntas frecuentes`);
+  if (paquete?.marca?.logo_url) generales.push("logo");
+  const colores = paquete?.marca?.colores || [];
+  if (colores.length) generales.push(`${colores.length} colores de marca`);
+  return generales;
+}

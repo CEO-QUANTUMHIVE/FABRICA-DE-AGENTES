@@ -547,3 +547,51 @@ body[data-connected="true"] .agent-vat { box-shadow: inset 0 0 65px rgba(82,231,
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior:auto!important;animation:none!important;transition:none!important; }
 }
+
+/* ── Visor del investigador ─────────────────────────────────────────────── */
+.scout { border-bottom:1px solid rgba(182,92,255,.18);background:linear-gradient(160deg,rgba(8,6,14,.9),rgba(4,10,14,.86)); }
+.scout[hidden] { display:none; }
+.scout__chrome { display:flex;align-items:center;gap:.3rem;padding:.5rem .7rem;border-bottom:1px solid rgba(255,255,255,.06); }
+.scout__chrome>i { width:7px;height:7px;border-radius:50%;background:rgba(255,255,255,.16); }
+.scout__url { flex:1;margin-left:.5rem;padding:.2rem .55rem;border-radius:6px;background:rgba(0,0,0,.4);color:var(--gold-soft);font-size:.6rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
+.scout__viewport { position:relative;height:150px;overflow:hidden;padding:.7rem .8rem; }
+.scout__page { display:grid;gap:.4rem;opacity:.5; }
+.scout__beam { position:absolute;inset:0 auto 0 -35%;width:35%;background:linear-gradient(90deg,transparent,rgba(82,231,242,.16),transparent);opacity:0;pointer-events:none; }
+.scout__agent { position:absolute;top:.5rem;right:.6rem;color:var(--cyan);font-size:.95rem;opacity:0;text-shadow:0 0 12px rgba(82,231,242,.8); }
+.scout[data-estado="visitando"] .scout__beam { opacity:1;animation:scout-barrido 1.7s linear infinite; }
+.scout[data-estado="visitando"] .scout__agent { opacity:1;animation:scout-latido 1.7s ease-in-out infinite; }
+.scout[data-estado="visitando"] .scout__page { opacity:.85; }
+@keyframes scout-barrido { from { transform:translateX(0) } to { transform:translateX(385%) } }
+@keyframes scout-latido { 0%,100% { transform:scale(1);opacity:.65 } 50% { transform:scale(1.35);opacity:1 } }
+
+.sk { display:block;border-radius:4px;background:rgba(255,255,255,.09); }
+.sk--barra { height:9px; } .sk--titulo { height:11px;width:52%; }
+.sk--linea { height:7px; } .sk--corta { width:64%; }
+.sk--portada { height:34px;border-radius:7px; }
+.sk--avatar { width:34px;height:34px;border-radius:50%;flex:0 0 auto; }
+.sk--bloque { height:30px;border-radius:6px; }
+.sk-fila { display:grid;grid-template-columns:repeat(3,1fr);gap:.35rem; }
+.sk-perfil { display:flex;align-items:center;gap:.5rem; }
+.sk-datos { display:grid;gap:.3rem;flex:1; }
+.sk-grilla { display:grid;grid-template-columns:repeat(3,1fr);gap:.25rem; }
+.sk-grilla>i { height:28px;border-radius:4px;background:rgba(255,255,255,.07); }
+.sk-mapa { display:grid;place-items:center;height:56px;border-radius:7px;background:rgba(82,231,242,.07); }
+.sk-pin { color:var(--cyan);font-size:1.1rem; }
+
+.scout__sources { display:grid;gap:.3rem;margin:0;padding:.55rem .7rem;list-style:none; }
+.scout-src { display:flex;align-items:center;gap:.5rem;padding:.32rem .5rem;border:1px solid rgba(255,255,255,.07);border-radius:8px;background:rgba(0,0,0,.28); }
+.scout-src__icono { display:grid;place-items:center;width:19px;height:19px;border-radius:5px;background:rgba(255,255,255,.07);color:var(--muted);font-size:.6rem;flex:0 0 auto; }
+.scout-src__texto { display:grid;min-width:0; }
+.scout-src__texto>b { color:var(--text);font-size:.62rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
+.scout-src__texto>small { color:var(--muted);font-size:.54rem; }
+.scout-src[data-estado="visitando"] { border-color:rgba(82,231,242,.42);background:rgba(82,231,242,.07); }
+.scout-src[data-estado="visitando"] .scout-src__icono { background:rgba(82,231,242,.2);color:var(--cyan); }
+.scout-src[data-estado="visitando"] .scout-src__texto>small { color:var(--cyan); }
+.scout-src[data-estado="encontrado"] { border-color:rgba(227,180,94,.34); }
+.scout-src[data-estado="encontrado"] .scout-src__icono { background:rgba(227,180,94,.18);color:var(--gold); }
+.scout-src[data-estado="encontrado"] .scout-src__texto>small { color:var(--gold-soft); }
+.scout-src[data-estado="fallo"] { border-color:rgba(255,122,122,.3); }
+.scout-src[data-estado="fallo"] .scout-src__texto>small { color:var(--danger); }
+.scout__note { display:block;padding:0 .7rem .6rem;color:#737b84;font-size:.55rem;line-height:1.45; }
+@media (prefers-reduced-motion:reduce) { .scout__beam,.scout__agent { animation:none !important; } }
+@media (max-width:620px) { .scout__viewport { height:118px; } }

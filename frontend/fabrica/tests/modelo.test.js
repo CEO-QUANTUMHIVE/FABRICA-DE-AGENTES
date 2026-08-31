@@ -4,10 +4,15 @@ import assert from "node:assert/strict";
 import {
   PERFIL_QUANTUMHIVE,
   armarPiezasConocimiento,
+  cerrarRecorrido,
+  destinoLegible,
   editarInvestigacion,
+  hallazgosGenerales,
+  hallazgosPorFuente,
   integrarInvestigacion,
   instruccionDePersonalidad,
   normalizarPerfil,
+  objetivosDeInvestigacion,
   progresoDelPerfil,
   promptDesdeFicha,
   slugDeNombre,
@@ -95,4 +100,59 @@ test("el dueño puede corregir los hallazgos antes de publicarlos", () => {
   assert.deepEqual(corregido.investigacion.precios, []);
   assert.equal(corregido.investigacion.marca.logo_url, "https://vieja.test/logo.png");
   assert.ok(armarPiezasConocimiento(corregido).some((pieza) => pieza.categoria === "faq"));
+});
+
+test("destinoLegible acorta webs y perfiles a algo mostrable", () => {
+  assert.equal(destinoLegible("web", "https://www.tallernorte.com.ar/turnos"), "tallernorte.com.ar");
+  assert.equal(destinoLegible("instagram", "https://instagram.com/tallernorte/"), "@tallernorte");
+  assert.equal(destinoLegible("instagram", "@tallernorte"), "@tallernorte");
+  assert.equal(destinoLegible("facebook", "facebook.com/tallernorte?ref=1"), "@tallernorte");
+  assert.equal(destinoLegible("web", "   "), "");
+});
+
+test("solo se visita la fuente que el dueño cargó", () => {
+  const objetivos = objetivosDeInvestigacion({
+    web: "https://tallernorte.com.ar",
+    instagram: "@tallernorte",
+    facebook: "",
+  });
+  assert.deepEqual(objetivos.map((o) => o.clave), ["web", "instagram"]);
+  assert.equal(objetivos[1].destino, "@tallernorte");
+});
+
+test("los hallazgos salen del paquete real, no se inventan", () => {
+  const hallazgos = hallazgosPorFuente({
+    negocio: { texto_web: "hola", tecnologias: ["wordpress"], puntuacion_google: 4.7 },
+    marca: { bio_instagram: "Taller", seguidores: 1200 },
+  });
+  assert.deepEqual(hallazgos.web, ["leyó la página", "1 tecnologías"]);
+  assert.deepEqual(hallazgos.instagram, ["bio del perfil", "1200 seguidores"]);
+  assert.deepEqual(hallazgos.facebook, []);
+  assert.deepEqual(hallazgos.url_maps, ["4.7 ★"]);
+});
+
+test("una fuente sin evidencia queda en sin-datos, nunca en encontrado", () => {
+  const objetivos = objetivosDeInvestigacion({ web: "x.com", facebook: "@y" });
+  const cerrado = cerrarRecorrido(objetivos, { negocio: { texto_web: "hola" }, marca: {} });
+  assert.equal(cerrado[0].estado, "encontrado");
+  assert.equal(cerrado[1].estado, "sin-datos");
+  assert.deepEqual(cerrado[1].hallazgos, []);
+});
+
+test("si el Perfilador falla ninguna fuente se da por visitada", () => {
+  const objetivos = objetivosDeInvestigacion({ web: "x.com", instagram: "@y" });
+  const cerrado = cerrarRecorrido(objetivos, null, true);
+  assert.deepEqual(cerrado.map((o) => o.estado), ["fallo", "fallo"]);
+  assert.ok(cerrado.every((o) => o.hallazgos.length === 0));
+});
+
+test("los hallazgos sin fuente atribuible van aparte", () => {
+  const generales = hallazgosGenerales({
+    servicios: ["a", "b"],
+    precios: [],
+    horarios: "Lunes",
+    preguntas_frecuentes: [{ pregunta: "p", respuesta: "r" }],
+    marca: { logo_url: "https://x.test/l.png", colores: ["#112233"] },
+  });
+  assert.deepEqual(generales, ["2 servicios", "horarios", "1 preguntas frecuentes", "logo", "1 colores de marca"]);
 });
