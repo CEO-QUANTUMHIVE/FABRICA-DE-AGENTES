@@ -43,6 +43,14 @@ Business con los datos del negocio completos (nombre legal, dirección, sitio,
 teléfono). Para ofrecer Coexistencia a clientes, QuantumHive debe completar la
 verificación del negocio y la habilitación como Tech Provider de Meta.
 
+> ✅ **Hecho el 2026-08-31.** Portfolio `Quantumhive`,
+> `business_id 1339027384106629`, con **verificación de la empresa aprobada**.
+> El portfolio viejo `1079094061364956` quedó abandonado.
+> **Falta todavía:** acceso avanzado a los permisos `whatsapp_business_*`, App
+> Review publicada y Tech Provider — necesarios solo para **clientes externos**.
+> Para el número propio de QuantumHive alcanza con la app en modo desarrollo y
+> el número agregado como tester.
+
 > ⚠️ **A mano. Nunca con automatización de navegador.** El 2026-08-16 eso
 > costó una cuenta personal de años. Está en la regla 0 de `CLAUDE.md`.
 

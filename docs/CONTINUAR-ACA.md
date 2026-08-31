@@ -1,5 +1,42 @@
 # Brief de continuación — Motor de Voz
 
+> ## ⚡ Estado al 2026-08-31 — Meta verificó la empresa. Esto manda sobre todo lo de abajo
+>
+> **El bloqueo de Meta del 2026-08-16 está resuelto por la vía limpia.** Hay un
+> portfolio nuevo y sano:
+>
+> | | |
+> |---|---|
+> | Portfolio | `Quantumhive`, **`business_id 1339027384106629`** |
+> | Verificación de la empresa | ✅ **Verificada**, "originalmente el Aug 31, 2026" |
+> | Evidencia | mail de Meta for Business + Centro de seguridad del portfolio |
+> | Caso de uso elegido | "La aplicación requiere acceso a permisos en Meta for Developers" |
+>
+> **El portfolio viejo `1079094061364956` queda abandonado.** Donde aparezca más
+> abajo en este documento, está desactualizado.
+>
+> **El código no se toca:** el `waba_id` se resuelve en tiempo de ejecución desde
+> el onboarding (`channels/whatsapp/onboarding.py`), nunca está cableado. Cambiar
+> de portfolio es cero líneas de Python.
+>
+> **Lo que esto desbloquea y lo que no:**
+>
+> - ✅ Ya se puede **pedir acceso avanzado** a `whatsapp_business_management` y
+>   `whatsapp_business_messaging`: ese pedido exigía la empresa verificada.
+> - ✅ Ya se puede conectar **el número propio de QuantumHive** con la app en modo
+>   desarrollo, agregando el número como tester. No hace falta nada más de Meta.
+> - ❌ **Todavía falta App Review publicada + Tech Provider** para ofrecer
+>   Coexistencia a **clientes externos**. Ese es el único tramo abierto.
+>
+> Descartado el 2026-08-31: **no se usa un agregador externo** (Zernio/Late ni
+> ningún BSP). La conexión la hace QuantumHive directo contra Meta, con la
+> custodia del token del cliente en nuestra bóveda. Ver §11.
+>
+> Siguiente paso operativo: las cinco tareas de
+> [`procesos/conectar-whatsapp.md`](procesos/conectar-whatsapp.md) — credenciales
+> en la VM, regla de Caddy para `/webhooks/*`, las dos migraciones del procesador,
+> systemd del worker, y el botón del panel.
+
 > ## ⚡ Estado al 2026-08-24 — Perfilador conectado a la Fábrica
 >
 > Se integró el repo `INTELIGENCIA-COMERCIAL-SCRAP` sin copiarlo ni modificarlo:
@@ -137,6 +174,8 @@
 >   de la cuenta personal, **estado desconocido**. Si sobrevivió, se recupera
 >   sumándole otro administrador; si Sergio era el único admin, puede haber
 >   quedado inaccesible.
+>   **→ Superado el 2026-08-31:** se abandonó y hay un portfolio nuevo verificado
+>   (`1339027384106629`). Ver el bloque del 2026-08-31 al principio del documento.
 > - App `quantumhive`: sin confirmar si llegó a crearse.
 > - Sergio tiene **CUIT y monotributo**, así que la verificación sigue siendo
 >   posible el día que haya una cuenta con la que hacerla.
@@ -749,7 +788,8 @@ respuesta ya no es código nuestro:
    propio servicio de systemd (`python -m motor_voz.channels.worker`).
 
 **Estado en Meta al 2026-08-15:** portfolio comercial `QuantumHive` creado
-(`business_id 1079094061364956`, sin duplicados, **no verificado**). La app
+(`business_id 1079094061364956`, sin duplicados, **no verificado** — abandonado
+el 2026-08-31, reemplazado por `1339027384106629`, ya verificado). La app
 `quantumhive` quedó **sin confirmar**: se completó el asistente pero Facebook
 tiró un checkpoint de "confirmá que sos una persona real" al automatizar el
 navegador. **No manejar la cuenta de Meta por automatización** — Meta lo
@@ -842,11 +882,16 @@ Cada una tiene un test que la cubre. **No las repitas.**
   `[Environment]::SetEnvironmentVariable('AZURE_OPENAI_API_KEY', $null, 'User')`
   y se reinicia la terminal
 - **Rotar la contraseña de Supabase** — quedó expuesta en el chat
-- **Empezar el alta de QuantumHive como Tech Provider de Meta.** Es lo más
-  lento de todo lo pendiente y es lo único que habilita coexistence, o sea que
-  un cliente conserve su número **y** su app de WhatsApp Business. Sin esto,
-  Jaz no se puede conectar sin perder su app. No bloquea el desarrollo del
-  canal, así que conviene que corra en paralelo desde ya
+- ~~**Verificación de la empresa en Meta**~~ — **hecha el 2026-08-31** sobre el
+  portfolio nuevo `1339027384106629`. Era el gate más lento
+- **Pedir acceso avanzado** a `whatsapp_business_management` y
+  `whatsapp_business_messaging` en la app. Recién ahora se puede: ese pedido
+  exigía la empresa verificada
+- **Terminar el alta como Tech Provider de Meta + App Review.** Es lo único que
+  falta para habilitar coexistence a **clientes**, o sea que un cliente conserve
+  su número **y** su app de WhatsApp Business. Sin esto, Jaz no se puede conectar
+  sin perder su app. **No bloquea el número propio de QuantumHive**, que ya se
+  puede conectar con la app en modo desarrollo
 - ~~Recrear el usuario `ceo@quantumhive.com.ar`~~ — **hecho el 2026-08-15.**
   Creado, confirmado, con contraseña y vinculado al tenant. Falta entrar una
   vez al panel para cerrar el gate E2E
@@ -931,3 +976,40 @@ salen en la ventana **AGENTE**.
   conectados; una acción válida continúa fallando cerrada con
   `worker_no_conectado`.
 - Contrato vigente: [`ceo-fabrica-de-agentes.md`](ceo-fabrica-de-agentes.md).
+
+---
+
+## 11. Sin agregadores: la capa de conexiones es nuestra — 2026-08-31
+
+Se evaluó **Zernio** (ex *Late*): un agregador que ofrece "una API para todas las
+conversaciones" —WhatsApp, Instagram, Facebook, Telegram, X, Reddit, Bluesky—
+con Embedded Signup y Coexistencia ya resueltos, webhooks firmados con HMAC,
+reintentos y SDK de Python.
+
+**Descartado.** Los motivos, en orden de peso:
+
+1. **La custodia del token del cliente.** El §8 del `MAPA` ya lo marca como el
+   dato más sensible del sistema: un token de WhatsApp deja mandar mensajes en
+   nombre del cliente. Con un agregador ese acceso vive afuera. Si el agregador
+   cierra o cambia de precio, **se caen todas las conexiones de todos los
+   clientes a la vez**, y no hay nada que podamos hacer.
+2. **El motivo principal se evaporó.** Se lo evaluó mientras la verificación de
+   Meta estaba trabada y parecía lenta. Se aprobó el 2026-08-31.
+3. **Es una empresa joven** —fundada en 2025, ocho personas, autofinanciada, ya
+   renombrada de Late a Zernio— y la evidencia a favor es débil: Reddit con
+   promoción de proveedores y un Trustpilot fusionado tras el rebrand.
+
+**La decisión NO es "no tener esa capa": es tenerla nosotros.** Ya está casi
+entera —parser, firma, cerebro, colas, envío, worker, topes y Embedded Signup—
+y `brain/` es agnóstico al canal por diseño.
+
+**Sigue valiendo la reversibilidad, y es barata:** `enviar_texto` no tiene
+dependientes y se engancha en una sola línea (`channels/enviador.py:52`). Si
+algún día Meta rechaza el App Review y no hay camino, un agregador entra ahí
+como un adaptador más, sin tocar cerebro, tenants, memoria, panel ni colas. Eso
+es plan B, no plan A.
+
+> **Lo que NO se decidió todavía:** si esta capa se ofrece además como producto
+> aparte, a terceros. Hoy es de uso interno para nuestros clientes. Venderla es
+> otro negocio, con otro soporte y otra responsabilidad sobre tokens ajenos, y
+> no se abre hasta que el canal propio esté facturando.

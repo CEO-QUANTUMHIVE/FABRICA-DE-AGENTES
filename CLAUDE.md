@@ -105,6 +105,13 @@ Corolario: **no abrir una cuenta nueva para hacer lo que la vieja tenía
 prohibido.** Meta lo llama evasión y vincula por dispositivo, IP y teléfono;
 el final normal es perder las dos.
 
+**Se recuperó por la vía limpia (2026-08-31).** Hay un portfolio nuevo y sano,
+`Quantumhive` (`business_id 1339027384106629`), con la **verificación de la
+empresa aprobada** — mail de Meta for Business y Centro de seguridad, "Verificada
+originalmente el Aug 31, 2026". El portfolio viejo `1079094061364956` queda
+abandonado; si aparece en un documento, está desactualizado. La regla de arriba
+no cambia ni un punto: la cuenta se recuperó, y se pierde igual de rápido.
+
 ### Lo que sí se puede, siempre
 
 Leer todo. Correr los tests, que no llaman a ninguna API ni gastan un peso.
