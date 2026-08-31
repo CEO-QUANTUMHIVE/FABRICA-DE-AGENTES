@@ -13,6 +13,7 @@ documento existe porque algo costó horas la primera vez.
 | [Conectar un WhatsApp al agente](conectar-whatsapp.md) | Un negocio tiene que atender por WhatsApp |
 | [Conectar el Perfilador de Clientes](conectar-perfilador.md) | La Fábrica debe investigar y precargar un negocio |
 | [Desplegar](desplegar.md) | Hay que subir cambios a producción |
+| [Desplegar el frontend de la Fábrica](desplegar-la-fabrica.md) | Cambió `frontend/fabrica/` y hay que verlo en `/fabrica/` |
 
 ## La regla que vale para todos
 
