@@ -85,7 +85,27 @@ function cargarPerfilLocal() {
 
 function cargarLogoLocal() {
   const valor = localStorage.getItem(LOGO_STORAGE_KEY) || "";
+  if (esLogoGenericoDeRed(valor)) {
+    localStorage.removeItem(LOGO_STORAGE_KEY);
+    localStorage.removeItem(COLORES_STORAGE_KEY);
+    return "";
+  }
   return /^(data:image\/(png|jpeg|webp);base64,|https:\/\/)/i.test(valor) ? valor : "";
+}
+
+function esLogoGenericoDeRed(valor) {
+  try {
+    const url = new URL(String(valor || ""));
+    const host = url.hostname.toLowerCase();
+    return host === "static.cdninstagram.com"
+      || (host.endsWith(".cdninstagram.com") && url.pathname.startsWith("/rsrc.php"));
+  } catch {
+    return false;
+  }
+}
+
+function esLogoRemotoAplicable(valor) {
+  return /^https:\/\//i.test(valor || "") && !esLogoGenericoDeRed(valor);
 }
 
 function cargarColoresLocal() {
@@ -677,7 +697,7 @@ function aplicarMarcaPublicada() {
     || pieza.versiones?.[0];
   const marca = version?.contenido?.marca;
   if (!marca || typeof marca !== "object") return;
-  if (/^https:\/\//i.test(marca.logo_url || "")) {
+  if (esLogoRemotoAplicable(marca.logo_url)) {
     state.logo = marca.logo_url;
     localStorage.setItem(LOGO_STORAGE_KEY, state.logo);
   }
@@ -1079,13 +1099,16 @@ function renderScout() {
       const foco = corriendo && indice === activo;
       const estado = foco ? "visitando" : objetivo.estado || "pendiente";
       const detalle = (objetivo.hallazgos || []).join(" · ");
-      const leyenda = {
+      let leyenda = {
         visitando: "mirando el perfil…",
         encontrado: detalle,
         "sin-datos": "sin datos públicos",
         fallo: "no se pudo entrar",
         pendiente: "en la cola",
       }[estado];
+      if (estado === "sin-datos" && objetivo.clave === "instagram") {
+        leyenda = "Instagram no entregó datos públicos";
+      }
       return `<li class="scout-src" data-estado="${estado}">
         <span class="scout-src__icono">${objetivo.icono}</span>
         <span class="scout-src__texto"><b>${escapeHtml(objetivo.destino)}</b><small>${escapeHtml(leyenda || "")}</small></span>
@@ -1163,7 +1186,7 @@ async function investigarNegocio(evento) {
     state.entrevista.campo = faltantes[0] || null;
     state.entrevista.progreso = Math.round(100 * (CAMPOS_ENTREVISTA.length - faltantes.length) / CAMPOS_ENTREVISTA.length);
     const marca = resultado.perfil?.marca || {};
-    if (/^https:\/\//i.test(marca.logo_url || "")) {
+    if (esLogoRemotoAplicable(marca.logo_url)) {
       state.logo = marca.logo_url;
       localStorage.setItem(LOGO_STORAGE_KEY, state.logo);
       actualizarLogo();
@@ -1183,12 +1206,17 @@ async function investigarNegocio(evento) {
       marca.logo_url ? "logo" : "",
     ].filter(Boolean);
     const siguiente = state.entrevista.campo ? ` Ahora sigamos: ${PREGUNTAS_ENTREVISTA[state.entrevista.campo]}` : " La ficha quedó completa.";
+    const resumen = hallazgos.length
+      ? `Investigación lista. Encontré ${hallazgos.join(", ")}.`
+      : "La fuente respondió, pero no entregó información pública utilizable. No voy a inventar datos ni usar imágenes genéricas de la red social.";
     state.entrevista.mensajes.push({
       rol: "assistant",
-      texto: `Investigación lista. Encontré ${hallazgos.join(", ") || "los datos básicos del negocio"}.${siguiente}`,
+      texto: `${resumen}${siguiente}`,
     });
     renderEntrevista();
-    mensaje.textContent = `Investigación aplicada a ${state.perfil.nombre}. Revisá lo encontrado y completá lo que falta con el guía.`;
+    mensaje.textContent = hallazgos.length
+      ? `Investigación aplicada a ${state.perfil.nombre}. Revisá lo encontrado y completá lo que falta con el guía.`
+      : "Instagram no entregó datos públicos del perfil. Probá también con la web o Google Maps, o completá la ficha manualmente.";
   } catch (fallo) {
     cerrarRecorridoVisual(null, true);
     mensaje.textContent = fallo.message;

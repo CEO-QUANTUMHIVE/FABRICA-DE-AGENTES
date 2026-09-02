@@ -134,11 +134,14 @@ def normalizar_paquete(valor: object) -> dict[str, Any]:
     logo_url = _url_publica(marca_cruda.get("logo_url")) or _url_publica(
         negocio.get("logo_url")
     )
+    logo_generico = _es_logo_generico_de_red(logo_url)
+    if logo_generico:
+        logo_url = ""
     colores = [
         color.lower()
         for color in _lista_textos(marca_cruda.get("colores"), 4, 7)
         if COLOR_HEX.fullmatch(color)
-    ]
+    ] if not logo_generico else []
     marca = {
         "logo_url": logo_url,
         "colores": colores,
@@ -249,6 +252,17 @@ def _url_publica(valor: object) -> str:
     ):
         return ""
     return texto
+
+
+def _es_logo_generico_de_red(valor: str) -> bool:
+    """Descarta recursos de interfaz de Meta que no son la marca del negocio."""
+    if not valor:
+        return False
+    parsed = urlparse(valor)
+    host = (parsed.hostname or "").lower()
+    return host == "static.cdninstagram.com" or (
+        host.endswith(".cdninstagram.com") and parsed.path.startswith("/rsrc.php")
+    )
 
 
 async def _pedir(

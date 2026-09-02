@@ -99,6 +99,21 @@ async def test_rechaza_fuentes_no_publicas_antes_de_hacer_red():
         )
 
 
+def test_descarta_el_logo_generico_de_instagram_y_sus_colores():
+    resultado = perfilador.normalizar_paquete(
+        {
+            "negocio": {"nombre": "Trader Boss"},
+            "marca": {
+                "logo_url": "https://static.cdninstagram.com/rsrc.php/v4/yD/r/logo.png",
+                "colores": ["#405de6", "#e1306c"],
+            },
+        }
+    )
+
+    assert resultado["marca"]["logo_url"] == ""
+    assert resultado["marca"]["colores"] == []
+
+
 async def test_sin_configuracion_falla_cerrado():
     with pytest.raises(perfilador.PerfiladorNoConfigurado):
         await perfilador.investigar(_config(), nombre="Negocio")
