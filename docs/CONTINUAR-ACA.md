@@ -1,5 +1,26 @@
 # Brief de continuación — Motor de Voz
 
+> ## ⚡ Estado al 2026-09-02 — Apify integrado y webhook de Meta publicado
+>
+> **Instagram público:** `INTELIGENCIA-COMERCIAL-SCRAP` ya tiene la integración
+> backend con el Actor oficial `apify/instagram-scraper`, en la rama
+> `codex/apify-instagram-perfilador`, commit `483478e` (41 pruebas en verde).
+> Hace una sola consulta `details` por alta, manda el token como Bearer y cae al
+> lector público anterior si Apify falla. **Todavía no está activo en producción:**
+> falta crear/cargar `APIFY_TOKEN` en Secret Manager, desplegar esa revisión y
+> ejecutar un smoke real.
+>
+> **Meta:** `GET /webhooks/whatsapp` ya atraviesa Caddy hacia la API. Se agregó
+> `handle /webhooks/*` en `livekit-quantumhive`, se validó el Caddyfile antes de
+> recargar y se conservó `/etc/caddy/Caddyfile.bak-20260902-whatsapp`. Evidencia:
+> `/api/salud` 200, `/widget.js` 200 y webhook 403 — rechazo correcto mientras
+> `WHATSAPP_VERIFY_TOKEN` no esté cargado. Ya no hay un 404 de ruteo.
+>
+> **Siguiente acción humana en Meta:** crear/confirmar la app Business, pedir
+> acceso avanzado y App Review, completar Tech Provider y crear la configuración
+> de Embedded Signup. De ahí salen `META_APP_ID`, `META_APP_SECRET` y
+> `META_EMBEDDED_SIGNUP_CONFIG_ID`; ningún agente opera el panel de Meta.
+
 > ## ⚡ Estado al 2026-08-31 — Meta verificó la empresa. Esto manda sobre todo lo de abajo
 >
 > **El bloqueo de Meta del 2026-08-16 está resuelto por la vía limpia.** Hay un
@@ -32,10 +53,10 @@
 > ningún BSP). La conexión la hace QuantumHive directo contra Meta, con la
 > custodia del token del cliente en nuestra bóveda. Ver §11.
 >
-> Siguiente paso operativo: las cinco tareas de
-> [`procesos/conectar-whatsapp.md`](procesos/conectar-whatsapp.md) — credenciales
-> en la VM, regla de Caddy para `/webhooks/*`, las dos migraciones del procesador,
-> systemd del worker, y el botón del panel.
+> Siguiente paso operativo: continuar
+> [`procesos/conectar-whatsapp.md`](procesos/conectar-whatsapp.md). La regla de
+> Caddy ya está aplicada; faltan credenciales de la app, verificar el webhook en
+> Meta, confirmar migraciones/worker y ejecutar el alta desde el botón del panel.
 
 > ## ⚡ Estado al 2026-08-24 — Perfilador conectado a la Fábrica
 >
@@ -118,8 +139,9 @@
 > **Falta un solo paso, y es de una persona:** entrar al panel, enseñarle algo,
 > publicarlo y escucharlo en el widget. Cinco minutos, sin código.
 >
-> Confirmado de paso: `GET /webhooks/whatsapp` da **404** en producción — falta
-> la regla de Caddy para `/webhooks/*`.
+> Actualizado el 2026-09-02: la regla de Caddy para `/webhooks/*` ya está
+> aplicada. El endpoint devuelve 403 sin verify token, que es el cierre seguro
+> esperado hasta cargar la configuración de Meta.
 >
 > ### Cómo se aplican migraciones ahora
 >

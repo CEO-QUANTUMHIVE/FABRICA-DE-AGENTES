@@ -91,7 +91,8 @@ Meta hace un `GET` con `hub.challenge` y espera el eco. Lo contesta
 
 **Dos cosas tienen que estar antes de tocar "Verificar", o falla:**
 
-1. **Regla de Caddy para `/webhooks/*` al puerto 8080.** Hoy da 404.
+1. **Regla de Caddy para `/webhooks/*` al puerto 8080.** Hecha el 2026-09-02.
+   El endpoint ya llega a la API y devuelve 403 mientras falta el verify token.
 2. **`WHATSAPP_VERIFY_TOKEN` cargado y la API reiniciada.** Si está vacío, el
    webhook falla cerrado a propósito y Meta ve un rechazo.
 
