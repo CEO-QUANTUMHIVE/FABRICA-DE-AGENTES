@@ -1037,3 +1037,33 @@ es plan B, no plan A.
 > aparte, a terceros. Hoy es de uso interno para nuestros clientes. Venderla es
 > otro negocio, con otro soporte y otra responsabilidad sobre tokens ajenos, y
 > no se abre hasta que el canal propio esté facturando.
+
+---
+
+## 12. Instagram público con Apify — desplegado 2026-09-02
+
+- El lector público de Instagram quedó implementado en
+  `INTELIGENCIA COMERCIAL SCRAP`, rama
+  `codex/apify-instagram-perfilador`, commit
+  `483478ece10e2652a2e2c788ae44ac1fe8e89801`, ya pusheado.
+- Usa el actor oficial `apify/instagram-scraper`, con el token únicamente en
+  Secret Manager (`perfilador-apify-token`). Si Apify falla, conserva el lector
+  público anterior como degradación controlada.
+- Suite completa del repo de Inteligencia Comercial: **41 passed**.
+- Cloud Build real:
+  `4e6465ab-9960-4ae4-82d7-f2ef469f7c65`, estado `SUCCESS`.
+- Imagen desplegada por digest:
+  `sha256:86c83847d8a7fbde6b3f9f4b4041c14eaf7820383b8fce4415ccb28bee5e5fe9`.
+- Revisión viva: `perfilador-clientes-00008-pox`, **100 % del tráfico** del
+  servicio `perfilador-clientes` en `us-east1`.
+- Gate E2E desde la URL pública aprobado con `@traderboss420`: salud `ok`,
+  `instagram_apify_configurado=true`, bio real presente, **498 seguidores** y
+  foto de perfil real; `logo_generico=false`.
+- Se comparó OpenAPI antes de promover: las siete rutas de producción siguen
+  presentes y no apareció ninguna pérdida de contrato.
+- La primera versión del secreto contenía el token duplicado, devolvía 401 y
+  quedó **DISABLED**. Producción usa explícitamente la versión `2`.
+- **Pendiente de seguridad:** rotar el token en Apify porque fue pegado en el
+  chat, crear una nueva versión del secreto y desplegar otra revisión apuntando
+  a esa versión. Hasta entonces funciona, pero la credencial debe considerarse
+  expuesta.
