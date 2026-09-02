@@ -55,15 +55,18 @@ async def test_el_token_viaja_solo_entre_servidores_y_normaliza_la_respuesta():
             CENTRO_INTELIGENCIA_TOKEN="secreto-interno",
         ),
         nombre="Taller Norte",
-        instagram="@tallernorte",
-        web="https://taller.test",
+        instagram="tallernorte",
+        facebook="tallernorte",
+        web="www.taller.test",
         pedir=pedir,
     )
 
     assert pedido["metodo"] == "POST"
     assert pedido["url"] == "https://inteligencia.test/clientes/investigar"
     assert pedido["headers"]["Authorization"] == "Bearer secreto-interno"
+    assert pedido["json"]["web"] == "https://www.taller.test"
     assert pedido["json"]["instagram"] == "@tallernorte"
+    assert pedido["json"]["facebook"] == "https://www.facebook.com/tallernorte"
     assert resultado["marca"]["colores"] == ["#aabbcc"]
     assert len(resultado["negocio"]["texto_web"]) == 6000
     assert "campo_privado" not in resultado

@@ -300,10 +300,10 @@ function plantilla() {
           <form class="research-box" id="research-form">
             <strong>Investigar fuentes públicas</strong>
             <div class="research-grid">
-              <input name="web" type="url" value="${escapeHtml(negocioInvestigado.web || "")}" placeholder="Web del negocio" />
+              <input name="web" type="text" inputmode="url" value="${escapeHtml(negocioInvestigado.web || "")}" placeholder="Web del negocio" />
               <input name="instagram" value="${escapeHtml(negocioInvestigado.instagram || "")}" placeholder="Instagram: @usuario o URL" />
               <input name="facebook" value="${escapeHtml(negocioInvestigado.facebook || "")}" placeholder="Facebook: usuario o URL" />
-              <input name="url_maps" type="url" value="${escapeHtml(negocioInvestigado.url_maps || "")}" placeholder="Google Maps (opcional)" />
+              <input name="url_maps" type="text" inputmode="url" value="${escapeHtml(negocioInvestigado.url_maps || "")}" placeholder="Google Maps (opcional)" />
             </div>
             <button class="secondary-button" id="research-button" type="submit">✦ Investigar mi negocio</button>
             <small id="research-message">El token y los scrapers corren en el servidor; nunca llegan a tu navegador.</small>

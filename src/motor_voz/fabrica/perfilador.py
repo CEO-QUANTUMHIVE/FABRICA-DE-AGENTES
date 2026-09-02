@@ -67,7 +67,11 @@ async def investigar(
         "nombre": nombre_limpio,
         "web": _fuente(web),
         "instagram": _fuente(instagram, admite_usuario=True),
-        "facebook": _fuente(facebook),
+        "facebook": _fuente(
+            facebook,
+            admite_usuario=True,
+            base_usuario="https://www.facebook.com",
+        ),
         "url_maps": _fuente(url_maps),
     }
     estado, respuesta = await (pedir or _pedir)(
@@ -197,12 +201,23 @@ def _url_http(valor: object) -> str:
     return texto if parsed.scheme in {"http", "https"} and parsed.netloc else ""
 
 
-def _fuente(valor: object, *, admite_usuario: bool = False) -> str | None:
+def _fuente(
+    valor: object,
+    *,
+    admite_usuario: bool = False,
+    base_usuario: str = "",
+) -> str | None:
     texto = str(valor or "").strip()[:1000]
     if not texto:
         return None
-    if admite_usuario and re.fullmatch(r"@[A-Za-z0-9._]{1,100}", texto):
-        return texto
+    if admite_usuario:
+        usuario = texto.lstrip("@")
+        if re.fullmatch(r"[A-Za-z0-9._]{1,100}", usuario):
+            if base_usuario:
+                return f"{base_usuario.rstrip('/')}/{usuario}"
+            return f"@{usuario}"
+    if "://" not in texto and "." in texto:
+        texto = f"https://{texto}"
     if not _url_publica(texto):
         raise PerfiladorInvalido("las fuentes deben ser URLs públicas válidas")
     return texto
