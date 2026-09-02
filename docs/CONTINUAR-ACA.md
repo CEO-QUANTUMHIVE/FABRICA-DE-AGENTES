@@ -19,7 +19,9 @@
 > **Siguiente acción humana en Meta:** crear/confirmar la app Business, pedir
 > acceso avanzado y App Review, completar Tech Provider y crear la configuración
 > de Embedded Signup. De ahí salen `META_APP_ID`, `META_APP_SECRET` y
-> `META_EMBEDDED_SIGNUP_CONFIG_ID`; ningún agente opera el panel de Meta.
+> `META_EMBEDDED_SIGNUP_CONFIG_ID`; ningún agente opera el panel de Meta. El
+> diseño para sumar Instagram y Facebook sin duplicar el cerebro está en
+> [`superpowers/plans/2026-09-02-meta-canales-unificados.md`](superpowers/plans/2026-09-02-meta-canales-unificados.md).
 
 > ## ⚡ Estado al 2026-08-31 — Meta verificó la empresa. Esto manda sobre todo lo de abajo
 >
