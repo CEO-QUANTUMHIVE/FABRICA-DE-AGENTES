@@ -13,8 +13,12 @@ import {
   instruccionDePersonalidad,
   normalizarPerfil,
   objetivosDeInvestigacion,
+  perfilVacio,
   progresoDelPerfil,
   promptDesdeFicha,
+  resumenDeFuentes,
+  esLogoGenericoDeRed,
+  esLogoRemotoAplicable,
   slugDeNombre,
 } from "../src/modelo.js";
 
@@ -45,6 +49,14 @@ test("los controles de personalidad se normalizan", () => {
   assert.equal(perfil.empatia, 0);
   assert.equal(perfil.iniciativa, 50);
   assert.match(instruccionDePersonalidad(perfil), /entusiasmo/i);
+});
+
+test("un borrador vacío no conserva identidad ni conocimiento del negocio anterior", () => {
+  const vacio = perfilVacio();
+  assert.equal(vacio.nombre, "");
+  assert.equal(vacio.rubro, "");
+  assert.deepEqual(vacio.investigacion, {});
+  assert.equal(progresoDelPerfil(vacio), 0);
 });
 
 test("la investigación completa identidad, oferta y piezas verificables", () => {
@@ -102,6 +114,32 @@ test("el dueño puede corregir los hallazgos antes de publicarlos", () => {
   assert.ok(armarPiezasConocimiento(corregido).some((pieza) => pieza.categoria === "faq"));
 });
 
+test("una investigación nueva reemplaza datos y marca de la anterior", () => {
+  const anterior = integrarInvestigacion({}, {
+    negocio: { nombre: "Negocio Viejo", telefono: "111", web: "https://viejo.test" },
+    servicios: ["Servicio viejo"],
+    marca: { logo_url: "https://viejo.test/logo.png", colores: ["#112233"] },
+  });
+  const actual = integrarInvestigacion(anterior, {
+    negocio: { nombre: "Negocio Nuevo", web: "https://nuevo.test" },
+    servicios: ["Servicio nuevo"],
+    marca: {},
+  });
+
+  assert.equal(actual.nombre, "Negocio Nuevo");
+  assert.equal(actual.investigacion.negocio.telefono, undefined);
+  assert.deepEqual(actual.investigacion.servicios, ["Servicio nuevo"]);
+  assert.equal(actual.investigacion.marca.logo_url, undefined);
+  assert.deepEqual(actual.investigacion.marca.colores, undefined);
+});
+
+test("los logos genéricos de redes nunca son aplicables", () => {
+  assert.equal(esLogoGenericoDeRed("https://static.cdninstagram.com/rsrc.php/v4/yR/r/blank_profile.png"), true);
+  assert.equal(esLogoGenericoDeRed("https://static.xx.fbcdn.net/rsrc.php/v3/yZ/r/default-avatar.png"), true);
+  assert.equal(esLogoRemotoAplicable("https://negocio.test/logo.png"), true);
+  assert.equal(esLogoRemotoAplicable("https://instagram.test/profile-icon.png"), false);
+});
+
 test("destinoLegible acorta webs y perfiles a algo mostrable", () => {
   assert.equal(destinoLegible("web", "https://www.tallernorte.com.ar/turnos"), "tallernorte.com.ar");
   assert.equal(destinoLegible("instagram", "https://instagram.com/tallernorte/"), "@tallernorte");
@@ -144,6 +182,16 @@ test("si el Perfilador falla ninguna fuente se da por visitada", () => {
   const cerrado = cerrarRecorrido(objetivos, null, true);
   assert.deepEqual(cerrado.map((o) => o.estado), ["fallo", "fallo"]);
   assert.ok(cerrado.every((o) => o.hallazgos.length === 0));
+});
+
+test("el resumen de fuentes distingue encontradas, sin datos, fallos y pendientes", () => {
+  assert.deepEqual(resumenDeFuentes([
+    { estado: "encontrado" },
+    { estado: "sin-datos" },
+    { estado: "fallo" },
+    {},
+    { estado: "encontrado" },
+  ]), { encontrado: 2, "sin-datos": 1, fallo: 1, pendiente: 1 });
 });
 
 test("los hallazgos sin fuente atribuible van aparte", () => {

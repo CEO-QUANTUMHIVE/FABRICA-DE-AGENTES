@@ -1067,3 +1067,20 @@ es plan B, no plan A.
   chat, crear una nueva versión del secreto y desplegar otra revisión apuntando
   a esa versión. Hasta entonces funciona, pero la credencial debe considerarse
   expuesta.
+
+---
+
+## 13. Perfilador: investigaciones consecutivas aisladas — 2026-09-06
+
+- Una investigación nueva reemplaza la identidad, los servicios y la marca de
+  la investigación anterior; ya no mezcla datos de dos negocios en el mismo
+  borrador local.
+- El botón **Empezar otro negocio** pide confirmación y limpia únicamente el
+  borrador, la investigación, el logo, los colores y las conversaciones de este
+  navegador. El conocimiento que el dueño ya publicó para su tenant no se borra.
+- Los logos genéricos de Instagram/Facebook se descartan y el visor diferencia
+  fuentes encontradas, sin datos, fallidas y pendientes.
+- Verificación local: **16/16** pruebas del frontend y suite completa de Python
+  con **450 passed, 15 deselected**. El build de producción genera los assets
+  bajo `/fabrica/`; la publicación se realiza desde el repositorio separado de
+  la landing según `docs/procesos/desplegar-la-fabrica.md`.

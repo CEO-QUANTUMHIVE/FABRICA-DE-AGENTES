@@ -27,6 +27,20 @@ export function normalizarPerfil(perfil = {}) {
   };
 }
 
+/** Un borrador vacío para iniciar otro negocio en este equipo. */
+export function perfilVacio() {
+  return normalizarPerfil({
+    nombre: "",
+    rubro: "",
+    publico: "",
+    oferta: "",
+    promesa: "",
+    objetivo: "",
+    limites: "",
+    investigacion: {},
+  });
+}
+
 function texto(valor) {
   return String(valor || "").trim();
 }
@@ -35,20 +49,37 @@ function lista(valor) {
   return Array.isArray(valor) ? valor.map(texto).filter(Boolean) : [];
 }
 
+/** Evita que una red entregue su avatar o ícono genérico como logo del negocio. */
+export function esLogoGenericoDeRed(valor) {
+  try {
+    const url = new URL(String(valor || ""));
+    const host = url.hostname.toLowerCase();
+    const ruta = url.pathname.toLowerCase();
+    return ruta.includes("/rsrc.php")
+      || /(?:default|generic|placeholder|avatar|profile[_-]?icon|instagram[_-]?icon)/i.test(ruta)
+      || host === "static.cdninstagram.com"
+      || host.endsWith(".cdninstagram.com") && ruta.startsWith("/rsrc.php");
+  } catch {
+    return false;
+  }
+}
+
+export function esLogoRemotoAplicable(valor) {
+  return /^https:\/\//i.test(valor || "") && !esLogoGenericoDeRed(valor);
+}
+
+function marcaAplicable(marca) {
+  if (!marca || typeof marca !== "object") return {};
+  const resultado = { ...marca };
+  if (esLogoGenericoDeRed(resultado.logo_url)) delete resultado.logo_url;
+  return resultado;
+}
+
 export function integrarInvestigacion(perfil, paquete = {}) {
   const actual = normalizarPerfil(perfil);
-  const investigacionActual = actual.investigacion && typeof actual.investigacion === "object"
-    ? actual.investigacion
-    : {};
-  const negocioAnterior = investigacionActual.negocio && typeof investigacionActual.negocio === "object"
-    ? investigacionActual.negocio
-    : {};
-  const marcaAnterior = investigacionActual.marca && typeof investigacionActual.marca === "object"
-    ? investigacionActual.marca
-    : {};
   const negocio = paquete?.negocio && typeof paquete.negocio === "object"
-    ? { ...negocioAnterior, ...paquete.negocio }
-    : negocioAnterior;
+    ? { ...paquete.negocio }
+    : {};
   const servicios = lista(paquete?.servicios);
   const precios = lista(paquete?.precios);
   const ofertaEncontrada = [
@@ -66,9 +97,7 @@ export function integrarInvestigacion(perfil, paquete = {}) {
       precios,
       horarios: texto(paquete?.horarios),
       preguntas_frecuentes: Array.isArray(paquete?.preguntas_frecuentes) ? paquete.preguntas_frecuentes : [],
-      marca: paquete?.marca && typeof paquete.marca === "object"
-        ? { ...marcaAnterior, ...paquete.marca }
-        : marcaAnterior,
+      marca: marcaAplicable(paquete?.marca),
       competidores: lista(paquete?.competidores),
     },
   });
@@ -359,6 +388,14 @@ export function cerrarRecorrido(objetivos = [], paquete = null, fallo = false) {
       hallazgos: encontrados,
     };
   });
+}
+
+export function resumenDeFuentes(objetivos = []) {
+  return objetivos.reduce((resumen, objetivo) => {
+    const estado = objetivo.estado || "pendiente";
+    if (Object.hasOwn(resumen, estado)) resumen[estado] += 1;
+    return resumen;
+  }, { encontrado: 0, "sin-datos": 0, fallo: 0, pendiente: 0 });
 }
 
 /** Lo que se encontró pero no se le puede atribuir a una fuente puntual. */

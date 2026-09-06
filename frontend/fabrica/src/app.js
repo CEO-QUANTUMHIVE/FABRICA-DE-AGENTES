@@ -10,8 +10,12 @@ import {
   integrarInvestigacion,
   normalizarPerfil,
   objetivosDeInvestigacion,
+  perfilVacio,
   promptDesdeFicha,
   progresoDelPerfil,
+  resumenDeFuentes,
+  esLogoGenericoDeRed,
+  esLogoRemotoAplicable,
   slugDeNombre,
 } from "./modelo.js";
 
@@ -91,21 +95,6 @@ function cargarLogoLocal() {
     return "";
   }
   return /^(data:image\/(png|jpeg|webp);base64,|https:\/\/)/i.test(valor) ? valor : "";
-}
-
-function esLogoGenericoDeRed(valor) {
-  try {
-    const url = new URL(String(valor || ""));
-    const host = url.hostname.toLowerCase();
-    return host === "static.cdninstagram.com"
-      || (host.endsWith(".cdninstagram.com") && url.pathname.startsWith("/rsrc.php"));
-  } catch {
-    return false;
-  }
-}
-
-function esLogoRemotoAplicable(valor) {
-  return /^https:\/\//i.test(valor || "") && !esLogoGenericoDeRed(valor);
 }
 
 function cargarColoresLocal() {
@@ -326,6 +315,7 @@ function plantilla() {
               <input name="url_maps" type="text" inputmode="url" value="${escapeHtml(negocioInvestigado.url_maps || "")}" placeholder="Google Maps (opcional)" />
             </div>
             <button class="secondary-button" id="research-button" type="submit">✦ Investigar mi negocio</button>
+            <button class="text-button research-reset-button" id="new-research-button" type="button">Empezar otro negocio</button>
             <small id="research-message">El token y los scrapers corren en el servidor; nunca llegan a tu navegador.</small>
             <details class="research-review" id="research-review" ${tieneInvestigacion ? "open" : ""}>
               <summary>Revisar o cargar los datos que aprenderá el agente</summary>
@@ -364,6 +354,7 @@ function plantilla() {
               <span class="scout__agent" id="scout-agent" aria-hidden="true">✦</span>
             </div>
             <ul class="scout__sources" id="scout-sources"></ul>
+            <small class="scout__summary" id="scout-summary" aria-live="polite"></small>
             <small class="scout__note" id="scout-note">Cargá la web o las redes y el investigador entra a mirarlas.</small>
           </div>
           <div class="chat-log" id="interview-log" aria-live="polite"></div>
@@ -527,6 +518,7 @@ function bind() {
   });
   refrescarScout();
   document.querySelector("#save-research-button").addEventListener("click", guardarInvestigacionManual);
+  document.querySelector("#new-research-button").addEventListener("click", empezarOtroNegocio);
   document.querySelector("#use-interview-button").addEventListener("click", pasarEntrevistaAlLaboratorio);
   document.querySelector("#draft-button").addEventListener("click", abrirBorrador);
   document.querySelector("#draft-form").addEventListener("submit", crearAgenteBorrador);
@@ -563,6 +555,39 @@ function actualizarColoresDeMarca() {
   if (!vat) return;
   vat.style.setProperty("--brand-primary", state.colores[0] || "var(--cyan)");
   vat.style.setProperty("--brand-secondary", state.colores[1] || state.colores[0] || "var(--violet)");
+}
+
+function empezarOtroNegocio() {
+  if (!window.confirm("Se limpiará el borrador local, la investigación y el logo de este equipo. El conocimiento ya publicado no se borra. ¿Continuar?")) return;
+  window.clearInterval(state.scout.reloj);
+  state.perfil = perfilVacio();
+  state.logo = "";
+  state.colores = [];
+  state.scout = { objetivos: [], activo: -1, corriendo: false, generales: [], reloj: null };
+  state.entrevista = {
+    ficha: {},
+    campo: "nombre",
+    progreso: 0,
+    mensajes: [
+      { rol: "assistant", texto: "Vamos a fabricar tu agente paso a paso. ¿Cómo se llama el negocio o el agente?" },
+    ],
+  };
+  state.mensajes = [{
+    rol: "assistant",
+    texto: "Soy el agente de QuantumHive conectado al brain real. Publicá el entrenamiento y preguntame como lo haría un posible cliente.",
+  }];
+  localStorage.removeItem(STORAGE_KEY);
+  localStorage.removeItem(LOGO_STORAGE_KEY);
+  localStorage.removeItem(COLORES_STORAGE_KEY);
+  sincronizarFormularioPerfil();
+  sincronizarInvestigacion();
+  document.querySelector("#research-review").open = false;
+  renderScout();
+  renderEntrevista();
+  renderChat();
+  document.querySelector("#research-message").textContent = "Borrador local limpio. Empezá con el nombre y las fuentes del nuevo negocio.";
+  document.querySelector("#research-review-message").textContent = "Nada se publica hasta que confirmes el entrenamiento.";
+  actualizarLogo();
 }
 
 function leerArchivoComoDataUrl(archivo) {
@@ -1115,6 +1140,14 @@ function renderScout() {
       </li>`;
     })
     .join("");
+
+  const resumen = resumenDeFuentes(objetivos);
+  document.querySelector("#scout-summary").textContent = [
+    resumen.encontrado ? `${resumen.encontrado} encontrada${resumen.encontrado > 1 ? "s" : ""}` : "",
+    resumen["sin-datos"] ? `${resumen["sin-datos"]} sin datos` : "",
+    resumen.fallo ? `${resumen.fallo} con fallo` : "",
+    resumen.pendiente ? `${resumen.pendiente} pendiente${resumen.pendiente > 1 ? "s" : ""}` : "",
+  ].filter(Boolean).join(" · ");
 
   const nota = document.querySelector("#scout-note");
   if (corriendo) nota.textContent = "El investigador corre en el servidor. Tu navegador nunca ve el token.";
