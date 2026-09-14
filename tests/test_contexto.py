@@ -60,7 +60,10 @@ def test_lista_solo_los_servicios_propios():
 
 
 def test_incluye_el_prompt_propio_del_tenant():
-    assert "Atendes en la barberia demo." in construir_contexto(DEMO_CAPILAR)
+    p = construir_contexto(DEMO_CAPILAR)
+    assert "Atendes en la barberia demo." in p
+    assert p.count("Atendes en la barberia demo.") == 1
+    assert "Identidad de barberia." not in p
 
 
 def test_respeta_motor_y_canal():

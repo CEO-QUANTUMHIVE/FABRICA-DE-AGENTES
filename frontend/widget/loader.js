@@ -15,11 +15,15 @@
   if (!actual) return;
 
   var origen = new URL(actual.src).origin;
+  var api = actual.getAttribute('data-api') || origen;
   var tenant = actual.getAttribute('data-tenant') || 'quantumhive';
+  var nombre = actual.getAttribute('data-nombre') || (tenant === 'quantumhive' ? 'QuantumHive' : tenant);
   var logo = actual.getAttribute('data-logo') || '';
   var acento = actual.getAttribute('data-acento') || '';
   var acento2 = actual.getAttribute('data-acento-2') || '';
   var clonar = actual.getAttribute('data-clonar') || '';
+  var nivel = actual.getAttribute('data-nivel') || '';
+  var niveles = actual.getAttribute('data-niveles') || '';
   // La conversacion es siempre la misma. Esto solo elige su presencia
   // visual: el orbe original o un avatar de video configurado por tenant.
   var modoPedido = actual.getAttribute('data-modo');
@@ -28,11 +32,14 @@
     : tenant === 'quantumhive' ? 'avatar' : 'orbe';
   var avatarBase = actual.getAttribute('data-avatar-base') || '';
 
-  var params = new URLSearchParams({ api: origen, tenant: tenant });
+  var params = new URLSearchParams({ api: api, tenant: tenant });
+  if (nombre) params.set('nombre', nombre);
   if (logo) params.set('logo', logo);
   if (acento) params.set('acento', acento);
   if (acento2) params.set('acento2', acento2);
   if (clonar) params.set('clonar', clonar);
+  if (nivel === '1' || nivel === '2' || nivel === '3') params.set('nivel', nivel);
+  if (/^[1-3](,[1-3])*$/.test(niveles)) params.set('niveles', niveles);
   params.set('modo', modo);
   if (avatarBase) params.set('avatarBase', avatarBase);
 
@@ -71,7 +78,7 @@
 
   var iframe = document.createElement('iframe');
   iframe.src = origen + '/widget.html?' + params.toString();
-  iframe.title = 'Agente de ' + tenant;
+  iframe.title = 'Agente de ' + nombre;
   iframe.setAttribute('allow', 'microphone');
   iframe.style.cssText = [
     'position:fixed',

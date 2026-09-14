@@ -14,7 +14,15 @@ import { Room, RoomEvent, Track } from 'livekit-client';
 const parametros = new URLSearchParams(location.search);
 const API = parametros.get('api') || 'https://voz.quantumhive.com.ar';
 const TENANT = parametros.get('tenant') || 'quantumhive';
+const NOMBRE = parametros.get('nombre') || (TENANT === 'quantumhive' ? 'QuantumHive' : TENANT);
 const LOGO = parametros.get('logo') || '';
+const NIVEL_INICIAL = Number(parametros.get('nivel'));
+const NIVELES_VISIBLES = new Set(
+  (parametros.get('niveles') || '1,2,3')
+    .split(',')
+    .map(Number)
+    .filter((nivel) => [1, 2, 3].includes(nivel)),
+);
 const MODO_PEDIDO = parametros.get('modo');
 const MODO = MODO_PEDIDO
   ? MODO_PEDIDO === 'avatar' ? 'avatar' : 'orbe'
@@ -75,16 +83,25 @@ if (MODO === 'avatar') {
   }
 }
 
+document.title = `Agente de ${NOMBRE}`;
+$('logo').alt = NOMBRE;
+$('avatar').setAttribute('aria-label', `Avatar de ${NOMBRE}`);
+$('invitacion').textContent = `Hablá con ${NOMBRE}`;
+$('esfera').title = `Hablá con ${NOMBRE}`;
+$('esfera').setAttribute('aria-label', `Abrir el agente de ${NOMBRE}`);
+$('orbe').querySelector('.orbe__titulo').textContent = NOMBRE;
 if (LOGO) $('logo').src = LOGO;
 
 let sala = null;
-let nivelElegido = 1;
+let nivelElegido = [1, 2, 3].includes(NIVEL_INICIAL) ? NIVEL_INICIAL : 1;
 let niveles = [];
 let voces = [];
 let vozElegida = '';
 let vocesAbierto = false;
 let temporizador = null;
 let microfonoActivo = false;
+let modalidadEntrada = 'texto';
+const pistasAudioAgente = new Set();
 
 // Los tres niveles estan operativos. El 3 (openai / "realismo extremo")
 // se habilito el 2026-08-10 al crear el recurso de Azure OpenAI con el
@@ -148,7 +165,11 @@ async function cargarNiveles() {
 function dibujarNiveles() {
   const cont = $('motores');
   cont.innerHTML = '';
-  for (const n of niveles) {
+  const visibles = niveles.filter((n) => NIVELES_VISIBLES.has(n.nivel));
+  // Un tenant con un unico motor no necesita ver una eleccion tecnica.
+  // El motor queda fijado por la landing y el cliente ve solo su agente.
+  cont.hidden = visibles.length <= 1;
+  for (const n of visibles) {
     const listo = NIVELES_LISTOS.has(n.nivel);
     const b = document.createElement('button');
     b.type = 'button';
@@ -179,7 +200,7 @@ function elegirNivel(numero) {
     // Cambiar de motor fija uno nuevo al reconectar: no se mezclan motores
     // dentro de una misma sala. Se reconecta despues de cargar el catalogo
     // para no pedir el token con una voz del motor anterior.
-    if (sala) conectar();
+    if (sala) conectar({ activarMicrofono: modalidadEntrada === 'voz' });
   });
 }
 
@@ -256,6 +277,8 @@ function dibujarVoces() {
     }
     cont.append(grilla);
   }
+
+  if (!NIVELES_VISIBLES.has(1)) return;
 
   // La clonacion es el paso siguiente del embudo: el visitante que llega
   // hasta aca eligiendo voces es justo el que puede querer la suya.
@@ -355,10 +378,32 @@ function actualizarTurno(quien, segmento) {
 
 // ---------- conexion ----------
 
-async function conectar() {
+function soltarAudio(track) {
+  for (const elemento of track.detach()) elemento.remove();
+}
+
+function aplicarSalidaAudio() {
+  for (const track of pistasAudioAgente) {
+    if (modalidadEntrada === 'voz') {
+      const elemento = track.attach();
+      elemento.autoplay = true;
+      elemento.play().catch(() => {});
+    } else {
+      soltarAudio(track);
+    }
+  }
+}
+
+function elegirModalidad(modalidad) {
+  modalidadEntrada = modalidad;
+  aplicarSalidaAudio();
+}
+
+async function conectar({ activarMicrofono = false } = {}) {
   aviso('');
   estado('conectando');
   await desconectar({ silencioso: true });
+  elegirModalidad(activarMicrofono ? 'voz' : 'texto');
 
   let datos;
   try {
@@ -378,9 +423,17 @@ async function conectar() {
   sala = new Room();
 
   sala.on(RoomEvent.TrackSubscribed, (track) => {
-    if (track.kind === Track.Kind.Audio) track.attach().play();
+    if (track.kind !== Track.Kind.Audio) return;
+    pistasAudioAgente.add(track);
+    aplicarSalidaAudio();
+  });
+  sala.on(RoomEvent.TrackUnsubscribed, (track) => {
+    if (track.kind !== Track.Kind.Audio) return;
+    pistasAudioAgente.delete(track);
+    soltarAudio(track);
   });
   sala.on(RoomEvent.Disconnected, () => {
+    pistasAudioAgente.clear();
     estado('dormido');
     marcarMicrofono(false);
   });
@@ -395,15 +448,15 @@ async function conectar() {
 
   try {
     await sala.connect(datos.url, datos.token);
-    await sala.localParticipant.setMicrophoneEnabled(true);
-    marcarMicrofono(true);
+    await sala.localParticipant.setMicrophoneEnabled(activarMicrofono);
+    marcarMicrofono(activarMicrofono);
   } catch (e) {
     estado('error');
     aviso(`No se pudo conectar: ${e.message}`);
     return;
   }
 
-  estado('escuchando');
+  estado(activarMicrofono ? 'escuchando' : 'lista');
 
   // Corte automatico: coincide con el limite del lado del servidor
   // (Config.max_session_seconds), asi el widget no queda esperando una
@@ -421,6 +474,7 @@ async function desconectar({ silencioso = false } = {}) {
     await sala.disconnect();
     sala = null;
   }
+  pistasAudioAgente.clear();
   marcarMicrofono(false);
   if (!silencioso) estado('dormido');
 }
@@ -438,10 +492,11 @@ $('mic').onclick = async () => {
   // Igual que en el original: prender el microfono es lo que dispara el
   // saludo del agente, cada vez.
   if (!sala) {
-    await conectar();
+    await conectar({ activarMicrofono: true });
     return;
   }
   const proximo = !microfonoActivo;
+  elegirModalidad(proximo ? 'voz' : 'texto');
   await sala.localParticipant.setMicrophoneEnabled(proximo);
   marcarMicrofono(proximo);
   estado(proximo ? 'escuchando' : 'lista');
@@ -453,7 +508,12 @@ async function enviarTexto() {
   const input = $('borrador');
   const texto = input.value.trim();
   if (!texto) return;
-  if (!sala) await conectar();
+  elegirModalidad('texto');
+  if (sala && microfonoActivo) {
+    await sala.localParticipant.setMicrophoneEnabled(false);
+    marcarMicrofono(false);
+  }
+  if (!sala) await conectar({ activarMicrofono: false });
   if (!sala) return;
   agregarTurno('yo', texto);
   input.value = '';
