@@ -837,10 +837,11 @@ function submitCustomMcp(event) {
 }
 
 async function publishVersion(event) {
-  const versionId = event.currentTarget.dataset.version;
+  const button = event.currentTarget;
+  const versionId = button.dataset.version;
   if (!versionId) return;
-  event.currentTarget.disabled = true;
-  event.currentTarget.textContent = "Publicando…";
+  button.disabled = true;
+  button.textContent = "Publicando…";
   try {
     if (state.demo) {
       const piece = state.conocimiento.find((item) => item.versiones?.some((version) => version.id === versionId));
@@ -851,8 +852,8 @@ async function publishVersion(event) {
     }
     renderShell();
   } catch (error) {
-    event.currentTarget.disabled = false;
-    event.currentTarget.textContent = error.message;
+    button.disabled = false;
+    button.textContent = error.message;
   }
 }
 

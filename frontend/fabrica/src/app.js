@@ -628,7 +628,8 @@ async function optimizarLogo(archivo) {
 }
 
 async function cargarLogo(evento) {
-  const archivo = evento.currentTarget.files?.[0];
+  const control = evento.currentTarget;
+  const archivo = control.files?.[0];
   if (!archivo) return;
   const mensaje = document.querySelector("#logo-message");
   mensaje.textContent = "Convirtiendo el logo en orbe…";
@@ -640,7 +641,7 @@ async function cargarLogo(evento) {
   } catch (error) {
     mensaje.textContent = error.message;
   } finally {
-    evento.currentTarget.value = "";
+    control.value = "";
   }
 }
 
@@ -740,8 +741,9 @@ function urlDeMuestra(ruta) {
 }
 
 async function cambiarMotorDeVoz(evento) {
+  const motor = evento.currentTarget.value;
   await desconectarVoz({ silencioso: true });
-  state.voz.motor = evento.currentTarget.value;
+  state.voz.motor = motor;
   state.voz.seleccion = "";
   document.querySelector("#agent-vat").dataset.voice = state.voz.motor;
   await cargarVoces();
@@ -922,12 +924,13 @@ async function manejarSesion() {
 
 async function ingresar(evento) {
   evento.preventDefault();
+  const formulario = evento.currentTarget;
   const mensaje = document.querySelector("#login-message");
   if (!supabase) {
     mensaje.textContent = "La conexión todavía no está configurada.";
     return;
   }
-  const datos = new FormData(evento.currentTarget);
+  const datos = new FormData(formulario);
   mensaje.textContent = "Verificando identidad y tenant…";
   const { data, error } = await supabase.auth.signInWithPassword({
     email: datos.get("email"),
@@ -941,7 +944,7 @@ async function ingresar(evento) {
   try {
     await cargarTenantActual();
     document.querySelector("#login-dialog").close();
-    evento.currentTarget.reset();
+    formulario.reset();
     mensaje.textContent = "";
     actualizarSesion();
   } catch (fallo) {
