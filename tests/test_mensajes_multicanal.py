@@ -20,8 +20,8 @@ def _mensaje(canal: str = "whatsapp", **cambios) -> MensajeEntrante:
     return MensajeEntrante(**datos)
 
 
-def test_los_cuatro_canales_comparten_el_mismo_contrato():
-    assert CANALES_COMERCIALES == {"web", "whatsapp", "instagram", "facebook"}
+def test_los_cinco_canales_comparten_el_mismo_contrato():
+    assert CANALES_COMERCIALES == {"web", "whatsapp", "instagram", "facebook", "telegram"}
     for canal in CANALES_COMERCIALES:
         assert _mensaje(canal).canal == canal
 
