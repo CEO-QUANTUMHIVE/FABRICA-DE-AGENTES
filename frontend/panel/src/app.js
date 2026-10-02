@@ -10,6 +10,7 @@ const supabase = configurado ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : n
 const app = document.querySelector("#app");
 const nav = [
   ["inicio", "⌂", "Inicio"],
+  ["conversaciones", "◌", "Conversaciones"],
   ["ensenar", "✦", "Enseñar"],
   ["negocio", "▦", "Mi negocio"],
   ["conexiones", "⌘", "Conexiones"],
@@ -22,6 +23,19 @@ const state = {
   tenants: [],
   tenant: null,
   conocimiento: [],
+  conversations: [],
+  conversationMessages: [],
+  selectedConversationId: null,
+  conversationChannel: "todos",
+  conversationStatus: "abiertas",
+  conversationsLoaded: false,
+  conversationsLoading: false,
+  messagesLoading: false,
+  conversationError: "",
+  conversationActionPending: "",
+  conversationDraft: "",
+  conversationPollTimer: null,
+  demoMessageStore: {},
   installEvent: null,
   trainingMode: "ensenar",
   trainingMessages: [
@@ -52,9 +66,58 @@ const demoKnowledge = [
   { id: "f1", categoria: "faq", clave: "reserva", titulo: "¿Cómo reservo un turno?", version_publicada_id: "v3", versiones: [{ id: "v3", numero: 1, contenido: { respuesta: "Podés reservar directamente por WhatsApp." } }] },
 ];
 
+const demoConversations = [
+  {
+    id: "demo-telegram",
+    canal: "telegram",
+    estado: "abierta",
+    modo: "humano",
+    no_leidos: 2,
+    contacto: { nombre: "Contacto de ejemplo", usuario: "@contacto_demo" },
+    ultimo_mensaje: "Quiero hablar con una persona.",
+    actualizado_en: new Date().toISOString(),
+  },
+  {
+    id: "demo-whatsapp",
+    canal: "whatsapp",
+    estado: "abierta",
+    modo: "automatico",
+    no_leidos: 0,
+    contacto: { nombre: "Consulta de ejemplo", telefono: "+54 ••• ••••" },
+    ultimo_mensaje: "¿Cómo funciona el servicio?",
+    actualizado_en: new Date(Date.now() - 18 * 60 * 1000).toISOString(),
+  },
+  {
+    id: "demo-web",
+    canal: "web",
+    estado: "cerrada",
+    modo: "cerrado",
+    no_leidos: 0,
+    contacto: { nombre: "Visitante web" },
+    ultimo_mensaje: "Gracias por la información.",
+    actualizado_en: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
+  },
+];
+
+const demoConversationMessages = {
+  "demo-telegram": [
+    { id: "dm-1", remitente: "cliente", texto: "Hola, quiero conocer el servicio.", creado_en: new Date(Date.now() - 8 * 60 * 1000).toISOString() },
+    { id: "dm-2", remitente: "agente", texto: "Claro. ¿Qué necesitás resolver?", creado_en: new Date(Date.now() - 7 * 60 * 1000).toISOString() },
+    { id: "dm-3", remitente: "cliente", texto: "Quiero hablar con una persona.", creado_en: new Date(Date.now() - 5 * 60 * 1000).toISOString() },
+  ],
+  "demo-whatsapp": [
+    { id: "dm-4", remitente: "cliente", texto: "¿Cómo funciona el servicio?", creado_en: new Date(Date.now() - 18 * 60 * 1000).toISOString() },
+    { id: "dm-5", remitente: "agente", texto: "Te explico y, si querés avanzar, te derivo con el equipo.", creado_en: new Date(Date.now() - 17 * 60 * 1000).toISOString() },
+  ],
+  "demo-web": [
+    { id: "dm-6", remitente: "cliente", texto: "Gracias por la información.", creado_en: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString() },
+  ],
+};
+
 const connectorCatalog = [
   { id: "google-business", icon: "📍", name: "Google Maps y reseñas", category: "Presencia online", kind: "Google", description: "Ubicación, horarios, información del local y reseñas del negocio." },
   { id: "whatsapp", icon: "◉", name: "WhatsApp", category: "Mensajería", kind: "Canal", description: "Atención y confirmaciones desde el número del negocio." },
+  { id: "telegram", icon: "✈", name: "Telegram Bot", category: "Mensajería", kind: "Canal", description: "Atención comercial, calificación de cuentas y respuestas por Telegram." },
   { id: "sheets", icon: "▦", name: "Google Sheets", category: "Planillas", kind: "Google", description: "Leer y actualizar listas, stock, clientes y precios autorizados." },
   { id: "excel", icon: "X", name: "Microsoft Excel", category: "Planillas", kind: "Microsoft", description: "Trabajar con archivos Excel guardados en OneDrive o SharePoint." },
   { id: "tiendanube", icon: "TN", name: "Tiendanube", category: "Ventas", kind: "API", description: "Productos, stock, pedidos y seguimiento de compras." },
@@ -127,6 +190,7 @@ function renderLogin() {
     </main>`;
 
   document.querySelector("#demo-button").addEventListener("click", () => {
+    resetConversationState();
     state.demo = true;
     state.tenants = [demoTenant];
     state.tenant = demoTenant;
@@ -310,7 +374,7 @@ function pageHead(eyebrow, title, subtitle, action = "") {
 
 function pageContent() {
   if (!state.tenant) return `${pageHead("Panel", "Todavía no tenés un agente", "Cuando vinculemos tu negocio va a aparecer acá.")}<div class="card empty">No hay negocios asociados a esta cuenta.</div>`;
-  const pages = { inicio: metricsPage, ensenar: teachPage, negocio: businessPage, conexiones: connectionsPage };
+  const pages = { inicio: metricsPage, conversaciones: conversationsPage, ensenar: teachPage, negocio: businessPage, conexiones: connectionsPage };
   return pages[state.page]();
 }
 
@@ -330,6 +394,217 @@ function metricsPage() {
 function channelRows() {
   const rows = [["◉", "WhatsApp", "Próxima conexión", "Pendiente"], ["◎", "Web", "Agente en tu sitio", "Activo"], ["◇", "Instagram", "Próxima etapa", "Pendiente"], ["□", "Facebook", "Próxima etapa", "Pendiente"]];
   return rows.map(([icon, name, detail, status]) => `<div class="channel"><span class="channel-icon">${icon}</span><div><strong>${name}</strong><span>${detail}</span></div><span class="pill ${status === "Pendiente" ? "pending" : ""}">${status}</span></div>`).join("");
+}
+
+function apiCollection(data, keys) {
+  if (Array.isArray(data)) return data;
+  for (const key of keys) if (Array.isArray(data?.[key])) return data[key];
+  return [];
+}
+
+function normalizedChannel(value) {
+  const channel = String(value || "web").toLowerCase();
+  if (channel.includes("whatsapp")) return "whatsapp";
+  if (channel.includes("telegram")) return "telegram";
+  if (channel.includes("instagram")) return "instagram";
+  if (channel.includes("facebook") || channel.includes("messenger")) return "facebook";
+  return "web";
+}
+
+function normalizedMode(value) {
+  const mode = String(value || "automatico").toLowerCase();
+  if (["humano", "human", "manual", "operador"].includes(mode)) return "humano";
+  if (["cerrado", "closed", "finalizado"].includes(mode)) return "cerrado";
+  return "automatico";
+}
+
+function normalizeConversation(raw = {}, index = 0) {
+  const contact = raw.contacto && typeof raw.contacto === "object" ? raw.contacto : {};
+  const mode = normalizedMode(raw.modo ?? raw.modo_atencion ?? raw.estado_atencion);
+  const statusValue = String(raw.estado || raw.status || "").toLowerCase();
+  const status = mode === "cerrado" || ["cerrada", "cerrado", "closed", "finalizada", "finalizado"].includes(statusValue)
+    ? "cerrada"
+    : "abierta";
+  return {
+    ...raw,
+    id: String(raw.id ?? raw.conversacion_id ?? ""),
+    canal: normalizedChannel(raw.canal ?? raw.channel ?? raw.origen),
+    modo: mode,
+    estado: status,
+    contacto: {
+      nombre: contact.nombre ?? raw.contacto_nombre ?? raw.nombre_contacto ?? raw.nombre ?? "Contacto sin nombre",
+      telefono: contact.telefono ?? raw.telefono ?? "",
+      usuario: contact.usuario ?? contact.username ?? raw.usuario ?? raw.username ?? "",
+      email: contact.email ?? raw.email ?? "",
+      identificador: contact.identificador ?? raw.contacto_externo_id ?? raw.identificador_externo ?? raw.external_id ?? "",
+      notas: contact.notas ?? raw.notas ?? "",
+    },
+    ultimo_mensaje: raw.ultimo_mensaje?.texto ?? raw.ultimo_mensaje ?? raw.last_message ?? raw.preview ?? "Abrí para ver el historial",
+    actualizado_en: raw.actualizado_en ?? raw.updated_at ?? raw.ultimo_mensaje_en ?? raw.creado_en ?? raw.created_at ?? "",
+    no_leidos: Number(raw.no_leidos ?? raw.unread_count ?? 0) || 0,
+  };
+}
+
+function normalizeMessage(raw = {}, index = 0) {
+  const sender = String(raw.remitente ?? raw.autor ?? raw.rol ?? raw.from ?? "").toLowerCase();
+  const direction = String(raw.direccion ?? "").toLowerCase();
+  let kind = direction.includes("saliente") || direction.includes("outbound") ? "saliente" : "agente";
+  if (["cliente", "user", "usuario", "contacto"].some((value) => sender.includes(value)) || direction.includes("entrante") || direction.includes("inbound")) kind = "cliente";
+  if (["agente", "agent", "assistant", "bot"].some((value) => sender.includes(value))) kind = "agente";
+  if (["humano", "human", "operador", "owner", "admin"].some((value) => sender.includes(value))) kind = "humano";
+  return {
+    ...raw,
+    id: String(raw.id ?? raw.mensaje_id ?? `mensaje-${index}`),
+    remitente: kind,
+    texto: String(raw.texto ?? raw.mensaje ?? raw.contenido ?? raw.content ?? ""),
+    creado_en: raw.ocurrido_en ?? raw.creado_en ?? raw.created_at ?? raw.fecha ?? "",
+  };
+}
+
+function channelMeta(channel) {
+  return {
+    whatsapp: ["WhatsApp", "◉"],
+    telegram: ["Telegram", "✈"],
+    instagram: ["Instagram", "◎"],
+    facebook: ["Messenger", "f"],
+    web: ["Web", "◇"],
+  }[channel] || ["Web", "◇"];
+}
+
+function relativeConversationTime(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const diffMinutes = Math.max(0, Math.round((Date.now() - date.getTime()) / 60000));
+  if (diffMinutes < 1) return "Ahora";
+  if (diffMinutes < 60) return `Hace ${diffMinutes} min`;
+  if (diffMinutes < 1440) return `Hace ${Math.round(diffMinutes / 60)} h`;
+  return date.toLocaleDateString("es-AR", { day: "2-digit", month: "short" });
+}
+
+function messageTime(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "" : date.toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" });
+}
+
+function selectedConversation() {
+  return state.conversations.find((conversation) => conversation.id === state.selectedConversationId) || null;
+}
+
+function filteredConversations() {
+  return state.conversations.filter((conversation) => {
+    const matchesChannel = state.conversationChannel === "todos" || conversation.canal === state.conversationChannel;
+    let matchesStatus = true;
+    if (state.conversationStatus === "abiertas") matchesStatus = conversation.estado !== "cerrada";
+    if (state.conversationStatus === "pendientes") matchesStatus = conversation.estado !== "cerrada" && conversation.no_leidos > 0;
+    if (state.conversationStatus === "humano") matchesStatus = conversation.modo === "humano";
+    if (state.conversationStatus === "automatico") matchesStatus = conversation.modo === "automatico";
+    if (state.conversationStatus === "cerradas") matchesStatus = conversation.estado === "cerrada";
+    return matchesChannel && matchesStatus;
+  });
+}
+
+function conversationListMarkup() {
+  if (!state.conversationsLoaded || (state.conversationsLoading && !state.conversations.length)) return `<div class="conversation-list-state"><span class="loading-dot"></span>Cargando conversaciones…</div>`;
+  if (state.conversationError && !state.conversations.length) return `<div class="conversation-list-state error"><strong>No pudimos cargar la bandeja</strong><span>${escape(state.conversationError)}</span><button class="secondary" id="retry-conversations">Reintentar</button></div>`;
+  const conversations = filteredConversations();
+  if (!conversations.length) {
+    return `<div class="conversation-list-state"><strong>No hay conversaciones acá</strong><span>${state.conversations.length ? "Probá cambiando los filtros." : "Cuando llegue el primer mensaje de Web, Telegram o WhatsApp aparecerá en esta bandeja."}</span></div>`;
+  }
+  return conversations.map((conversation) => {
+    const [channelName, channelIcon] = channelMeta(conversation.canal);
+    return `<button class="conversation-row ${conversation.id === state.selectedConversationId ? "active" : ""}" data-conversation-id="${escape(conversation.id)}">
+      <span class="conversation-channel channel-${escape(conversation.canal)}" title="${channelName}">${channelIcon}</span>
+      <span class="conversation-row-copy">
+        <span class="conversation-row-top"><strong>${escape(conversation.contacto.nombre)}</strong><time>${escape(relativeConversationTime(conversation.actualizado_en))}</time></span>
+        <span class="conversation-preview">${escape(conversation.ultimo_mensaje)}</span>
+        <span class="conversation-tags"><i class="mode-tag ${escape(conversation.modo)}">${conversation.modo === "humano" ? "Atención humana" : conversation.modo === "cerrado" ? "Cerrada" : "Agente activo"}</i><i>${channelName}</i></span>
+      </span>
+      ${conversation.no_leidos ? `<b class="unread-count">${conversation.no_leidos > 99 ? "99+" : conversation.no_leidos}</b>` : ""}
+    </button>`;
+  }).join("");
+}
+
+function conversationMessagesMarkup(conversation) {
+  if (!conversation) return `<div class="conversation-empty"><span>◌</span><strong>Elegí una conversación</strong><p>Acá vas a ver el historial completo y podrás intervenir cuando haga falta.</p></div>`;
+  if (state.messagesLoading) return `<div class="conversation-empty"><span class="loading-dot"></span><strong>Cargando mensajes…</strong></div>`;
+  if (!state.conversationMessages.length) return `<div class="conversation-empty"><span>◇</span><strong>Todavía no hay mensajes</strong><p>El historial aparecerá cuando el contacto envíe su primer mensaje.</p></div>`;
+  return state.conversationMessages.map((message) => {
+    const label = message.remitente === "cliente" ? conversation.contacto.nombre : message.remitente === "humano" ? "Equipo" : message.remitente === "agente" ? "Agente IA" : "Respuesta enviada";
+    return `<article class="multichat-message ${escape(message.remitente)}"><span>${escape(label)}</span><p>${escape(message.texto)}</p><time>${escape(messageTime(message.creado_en))}</time></article>`;
+  }).join("");
+}
+
+function profileField(label, value) {
+  return value ? `<div class="profile-field"><span>${label}</span><strong>${escape(value)}</strong></div>` : "";
+}
+
+function conversationProfileMarkup(conversation) {
+  if (!conversation) return `<div class="conversation-profile-empty">Seleccioná una conversación para ver la ficha del contacto.</div>`;
+  const [channelName, channelIcon] = channelMeta(conversation.canal);
+  const contact = conversation.contacto;
+  const extraFields = [
+    profileField("Teléfono", contact.telefono),
+    profileField("Usuario", contact.usuario),
+    profileField("Correo", contact.email),
+    profileField("Identificador", contact.identificador),
+  ].filter(Boolean).join("");
+  return `<div class="profile-contact">
+      <span class="profile-avatar">${initials(contact.nombre)}</span>
+      <h2>${escape(contact.nombre)}</h2>
+      <span class="channel-pill channel-${escape(conversation.canal)}">${channelIcon} ${channelName}</span>
+    </div>
+    <div class="profile-details">
+      ${extraFields || `<div class="profile-field"><span>Datos de contacto</span><strong>Todavía no informados</strong></div>`}
+      ${profileField("Notas", contact.notas)}
+      <div class="profile-field"><span>Estado de atención</span><strong>${conversation.modo === "humano" ? "A cargo del equipo" : conversation.modo === "cerrado" ? "Conversación cerrada" : "Responde el agente"}</strong></div>
+    </div>`;
+}
+
+function conversationsPage() {
+  const conversation = selectedConversation();
+  const [channelName, channelIcon] = channelMeta(conversation?.canal);
+  const humanMode = conversation?.modo === "humano";
+  const closed = conversation?.modo === "cerrado" || conversation?.estado === "cerrada";
+  const composerDisabled = !conversation || !humanMode || state.conversationActionPending === "send";
+  const composerPlaceholder = !conversation
+    ? "Elegí una conversación"
+    : humanMode
+      ? "Escribí como el equipo de atención…"
+      : closed
+        ? "Reabrí la conversación para responder"
+        : "Tomá la conversación para responder personalmente";
+  return `<section class="multichat-page">
+    ${pageHead("Bandeja multicanal", "Conversaciones", "Web, Telegram y WhatsApp atendidos desde un solo lugar.", `<button class="secondary" id="refresh-conversations" ${state.conversationsLoading ? "disabled" : ""}>↻ Actualizar</button>`)}
+    ${demoBanner()}
+    ${state.conversationError && state.conversations.length ? `<div class="multichat-alert">No se pudo actualizar: ${escape(state.conversationError)}</div>` : ""}
+    <section class="card multichat-layout">
+      <aside class="conversation-inbox">
+        <header class="conversation-inbox-head"><div><strong>Bandeja</strong><span>${state.conversations.length} conversaciones</span></div></header>
+        <div class="conversation-filters">
+          <label><span>Canal</span><select id="conversation-channel-filter"><option value="todos" ${state.conversationChannel === "todos" ? "selected" : ""}>Todos</option><option value="web" ${state.conversationChannel === "web" ? "selected" : ""}>Web</option><option value="telegram" ${state.conversationChannel === "telegram" ? "selected" : ""}>Telegram</option><option value="whatsapp" ${state.conversationChannel === "whatsapp" ? "selected" : ""}>WhatsApp</option><option value="instagram" ${state.conversationChannel === "instagram" ? "selected" : ""}>Instagram</option><option value="facebook" ${state.conversationChannel === "facebook" ? "selected" : ""}>Messenger</option></select></label>
+          <label><span>Estado</span><select id="conversation-status-filter"><option value="abiertas" ${state.conversationStatus === "abiertas" ? "selected" : ""}>Abiertas</option><option value="pendientes" ${state.conversationStatus === "pendientes" ? "selected" : ""}>Pendientes</option><option value="humano" ${state.conversationStatus === "humano" ? "selected" : ""}>En atención</option><option value="automatico" ${state.conversationStatus === "automatico" ? "selected" : ""}>Con agente</option><option value="cerradas" ${state.conversationStatus === "cerradas" ? "selected" : ""}>Cerradas</option><option value="todas" ${state.conversationStatus === "todas" ? "selected" : ""}>Todas</option></select></label>
+        </div>
+        <div class="conversation-list">${conversationListMarkup()}</div>
+      </aside>
+      <section class="conversation-chat">
+        <header class="conversation-chat-head">
+          <div>${conversation ? `<span class="conversation-channel channel-${escape(conversation.canal)}">${channelIcon}</span><div><strong>${escape(conversation.contacto.nombre)}</strong><span>${channelName} · ${humanMode ? "Atiende el equipo" : closed ? "Cerrada" : "Responde el agente"}</span></div>` : `<div><strong>Historial</strong><span>Seleccioná una conversación</span></div>`}</div>
+          ${conversation ? `<div class="conversation-actions"><button class="secondary" data-conversation-mode="humano" ${humanMode || closed || state.conversationActionPending ? "disabled" : ""}>Tomar conversación</button><button class="secondary" data-conversation-mode="automatico" ${(!humanMode && !closed) || state.conversationActionPending ? "disabled" : ""}>Devolver al agente</button><button class="ghost danger" data-conversation-mode="cerrado" ${closed || state.conversationActionPending ? "disabled" : ""}>Cerrar</button></div>` : ""}
+        </header>
+        <div class="multichat-messages" id="conversation-messages">${conversationMessagesMarkup(conversation)}</div>
+        <form class="multichat-composer" id="conversation-message-form">
+          <input name="texto" value="${escape(state.conversationDraft)}" placeholder="${composerPlaceholder}" autocomplete="off" ${composerDisabled ? "disabled" : ""}>
+          <button class="primary" ${composerDisabled ? "disabled" : ""}>${state.conversationActionPending === "send" ? "Enviando…" : "Enviar"}</button>
+        </form>
+      </section>
+      <aside class="conversation-profile">
+        <header><span class="eyebrow">Ficha del contacto</span></header>
+        ${conversationProfileMarkup(conversation)}
+      </aside>
+    </section>
+  </section>`;
 }
 
 function memoriesPage() {
@@ -465,6 +740,7 @@ function connectionSetupModal() {
 }
 
 function connectionPermissions(connector) {
+  if (connector.category === "Mensajería") return ["Recibir mensajes de clientes", "Responder consultas y calificar leads", "Derivar a un operador humano ante acuerdos", "Registrar historial de conversaciones"];
   if (connector.category === "Pagos y cobros") return ["Crear links u órdenes de cobro", "Consultar el estado de los pagos", "Confirmar una reserva cuando se acredita", "Preparar devoluciones con aprobación"];
   if (connector.id === "mercadolibre") return ["Leer publicaciones, precios y stock", "Responder preguntas autorizadas", "Consultar pedidos y envíos", "Proponer cambios de precio o stock"];
   if (connector.category === "Calendarios") return ["Consultar horarios disponibles", "Crear y reprogramar turnos", "Cancelar únicamente con confirmación"];
@@ -472,13 +748,192 @@ function connectionPermissions(connector) {
   return ["Consultar información necesaria", "Realizar acciones autorizadas", "Guardar un registro de cada acción"];
 }
 
-function bindShell() {
-  document.querySelectorAll("[data-page]").forEach((button) => button.addEventListener("click", () => {
-    state.page = button.dataset.page;
+function resetConversationState() {
+  if (state.conversationPollTimer) clearInterval(state.conversationPollTimer);
+  Object.assign(state, {
+    conversations: [],
+    conversationMessages: [],
+    selectedConversationId: null,
+    conversationsLoaded: false,
+    conversationsLoading: false,
+    messagesLoading: false,
+    conversationError: "",
+    conversationActionPending: "",
+    conversationDraft: "",
+    conversationPollTimer: null,
+    demoMessageStore: {},
+  });
+}
+
+function setConversationPolling() {
+  const shouldPoll = state.page === "conversaciones" && !state.demo && Boolean(state.session && state.tenant);
+  if (!shouldPoll && state.conversationPollTimer) {
+    clearInterval(state.conversationPollTimer);
+    state.conversationPollTimer = null;
+    return;
+  }
+  if (shouldPoll && !state.conversationPollTimer) {
+    state.conversationPollTimer = setInterval(() => refreshConversationWorkspace({ silent: true }), 12000);
+  }
+}
+
+function conversationSignature(conversations, messages, selectedId) {
+  return JSON.stringify({
+    conversations: conversations.map(({ id, canal, estado, modo, no_leidos, ultimo_mensaje, actualizado_en }) => ({ id, canal, estado, modo, no_leidos, ultimo_mensaje, actualizado_en })),
+    messages: messages.map(({ id, remitente, texto, creado_en }) => ({ id, remitente, texto, creado_en })),
+    selectedId,
+  });
+}
+
+function updateSelectedConversationPreview() {
+  const conversation = selectedConversation();
+  const lastMessage = state.conversationMessages.at(-1);
+  if (!conversation || !lastMessage) return;
+  conversation.ultimo_mensaje = lastMessage.texto || conversation.ultimo_mensaje;
+  conversation.actualizado_en = lastMessage.creado_en || conversation.actualizado_en;
+  conversation.no_leidos = 0;
+}
+
+async function refreshConversationWorkspace({ silent = false } = {}) {
+  if (state.conversationsLoading || state.page !== "conversaciones" || !state.tenant) return;
+  state.conversationsLoading = true;
+  const previousSignature = conversationSignature(state.conversations, state.conversationMessages, state.selectedConversationId);
+  const previousError = state.conversationError;
+  try {
+    if (state.demo) {
+      if (!state.conversationsLoaded) {
+        state.conversations = demoConversations.map((conversation) => normalizeConversation({ ...conversation, contacto: { ...conversation.contacto } }));
+        state.demoMessageStore = Object.fromEntries(Object.entries(demoConversationMessages).map(([id, messages]) => [id, messages.map((message, index) => normalizeMessage({ ...message }, index))]));
+      }
+    } else {
+      const data = await api(`/api/panel/${encodeURIComponent(state.tenant.slug)}/conversaciones`);
+      state.conversations = apiCollection(data, ["conversaciones", "items", "data"])
+        .map(normalizeConversation)
+        .filter((conversation) => conversation.id);
+    }
+
+    const selectedStillExists = state.conversations.some((conversation) => conversation.id === state.selectedConversationId);
+    if (!selectedStillExists) state.selectedConversationId = state.conversations.find((conversation) => conversation.estado !== "cerrada")?.id || state.conversations[0]?.id || null;
+
+    if (state.selectedConversationId) {
+      if (state.demo) {
+        state.conversationMessages = [...(state.demoMessageStore[state.selectedConversationId] || [])];
+      } else {
+        const messageData = await api(`/api/panel/${encodeURIComponent(state.tenant.slug)}/conversaciones/${encodeURIComponent(state.selectedConversationId)}/mensajes`);
+        state.conversationMessages = apiCollection(messageData, ["mensajes", "items", "data"])
+          .map(normalizeMessage)
+          .sort((left, right) => new Date(left.creado_en || 0) - new Date(right.creado_en || 0));
+      }
+      updateSelectedConversationPreview();
+    } else {
+      state.conversationMessages = [];
+    }
+    state.conversationError = "";
+    state.conversationsLoaded = true;
+  } catch (error) {
+    state.conversationError = error.message || "No se pudo conectar con la bandeja.";
+    state.conversationsLoaded = true;
+  } finally {
+    state.conversationsLoading = false;
+  }
+
+  const changed = previousSignature !== conversationSignature(state.conversations, state.conversationMessages, state.selectedConversationId);
+  if (!silent || changed || previousError !== state.conversationError) renderShell();
+}
+
+async function selectConversation(id) {
+  if (!id || id === state.selectedConversationId) return;
+  state.selectedConversationId = id;
+  state.conversationDraft = "";
+  state.conversationError = "";
+  state.messagesLoading = true;
+  renderShell();
+  try {
+    if (state.demo) {
+      state.conversationMessages = [...(state.demoMessageStore[id] || [])];
+    } else {
+      const data = await api(`/api/panel/${encodeURIComponent(state.tenant.slug)}/conversaciones/${encodeURIComponent(id)}/mensajes`);
+      state.conversationMessages = apiCollection(data, ["mensajes", "items", "data"])
+        .map(normalizeMessage)
+        .sort((left, right) => new Date(left.creado_en || 0) - new Date(right.creado_en || 0));
+    }
+    updateSelectedConversationPreview();
+  } catch (error) {
+    state.conversationMessages = [];
+    state.conversationError = error.message || "No se pudo cargar el historial.";
+  } finally {
+    state.messagesLoading = false;
     renderShell();
-  }));
+  }
+}
+
+async function changeConversationMode(event) {
+  const conversation = selectedConversation();
+  const mode = event.currentTarget.dataset.conversationMode;
+  if (!conversation || !["humano", "automatico", "cerrado"].includes(mode) || state.conversationActionPending) return;
+  state.conversationActionPending = mode;
+  state.conversationError = "";
+  renderShell();
+  try {
+    if (!state.demo) {
+      await api(`/api/panel/${encodeURIComponent(state.tenant.slug)}/conversaciones/${encodeURIComponent(conversation.id)}/modo`, {
+        method: "POST",
+        body: JSON.stringify({ modo: mode }),
+      });
+    }
+    conversation.modo = mode;
+    conversation.estado = mode === "cerrado" ? "cerrada" : "abierta";
+    if (!state.demo) await refreshConversationWorkspace({ silent: true });
+  } catch (error) {
+    state.conversationError = error.message || "No se pudo cambiar quién atiende esta conversación.";
+  } finally {
+    state.conversationActionPending = "";
+    renderShell();
+  }
+}
+
+async function sendConversationMessage(event) {
+  event.preventDefault();
+  const conversation = selectedConversation();
+  const text = String(new FormData(event.currentTarget).get("texto") || "").trim();
+  if (!conversation || conversation.modo !== "humano" || !text || state.conversationActionPending) return;
+  state.conversationActionPending = "send";
+  state.conversationDraft = text;
+  state.conversationError = "";
+  renderShell();
+  try {
+    if (state.demo) {
+      const message = normalizeMessage({ id: crypto.randomUUID(), remitente: "humano", texto: text, creado_en: new Date().toISOString() });
+      state.demoMessageStore[conversation.id] = [...(state.demoMessageStore[conversation.id] || []), message];
+      state.conversationMessages = [...state.demoMessageStore[conversation.id]];
+      conversation.ultimo_mensaje = text;
+      conversation.actualizado_en = message.creado_en;
+    } else {
+      await api(`/api/panel/${encodeURIComponent(state.tenant.slug)}/conversaciones/${encodeURIComponent(conversation.id)}/mensajes`, {
+        method: "POST",
+        body: JSON.stringify({ texto: text }),
+      });
+      state.conversationMessages.push(normalizeMessage({ id: `local-${Date.now()}`, remitente: "humano", texto: text, creado_en: new Date().toISOString() }));
+      updateSelectedConversationPreview();
+    }
+    state.conversationDraft = "";
+  } catch (error) {
+    state.conversationError = error.message || "No se pudo enviar el mensaje.";
+  } finally {
+    state.conversationActionPending = "";
+    renderShell();
+  }
+}
+
+function navigateToPage(page) {
+  state.page = page;
+  renderShell();
+}
+
+function bindShell() {
+  document.querySelectorAll("[data-page]").forEach((button) => button.addEventListener("click", () => navigateToPage(button.dataset.page)));
   document.querySelector("#logout")?.addEventListener("click", signOut);
-  document.querySelector("#exit-demo")?.addEventListener("click", () => { state.demo = false; state.tenants = []; state.tenant = null; renderLogin(); });
+  document.querySelector("#exit-demo")?.addEventListener("click", () => { resetConversationState(); state.demo = false; state.tenants = []; state.tenant = null; renderLogin(); });
   document.querySelector("#tenant-select")?.addEventListener("change", changeTenant);
   document.querySelectorAll("[data-mode]").forEach((button) => button.addEventListener("click", () => switchTrainingMode(button.dataset.mode)));
   document.querySelector("#training-chat-form")?.addEventListener("submit", handleTrainingMessage);
@@ -511,13 +966,24 @@ function bindShell() {
   document.querySelector("#cancel-connection")?.addEventListener("click", closeConnectionSetup);
   document.querySelector("#close-connection-backdrop")?.addEventListener("click", closeConnectionSetup);
   document.querySelector("#authorize-connection")?.addEventListener("click", authorizeConnection);
+  document.querySelector("#refresh-conversations")?.addEventListener("click", () => refreshConversationWorkspace());
+  document.querySelector("#retry-conversations")?.addEventListener("click", () => refreshConversationWorkspace());
+  document.querySelector("#conversation-channel-filter")?.addEventListener("change", (event) => { state.conversationChannel = event.target.value; renderShell(); });
+  document.querySelector("#conversation-status-filter")?.addEventListener("change", (event) => { state.conversationStatus = event.target.value; renderShell(); });
+  document.querySelectorAll("[data-conversation-id]").forEach((button) => button.addEventListener("click", () => selectConversation(button.dataset.conversationId)));
+  document.querySelectorAll("[data-conversation-mode]").forEach((button) => button.addEventListener("click", changeConversationMode));
+  document.querySelector("#conversation-message-form")?.addEventListener("submit", sendConversationMessage);
+  document.querySelector("#conversation-message-form input")?.addEventListener("input", (event) => { state.conversationDraft = event.target.value; });
   updateConnectorCount();
   const install = document.querySelector("#install");
   if (state.installEvent && install) install.hidden = false;
   install?.addEventListener("click", installApp);
+  setConversationPolling();
+  if (state.page === "conversaciones" && !state.conversationsLoaded && !state.conversationsLoading) refreshConversationWorkspace();
 }
 
 async function changeTenant(event) {
+  resetConversationState();
   state.tenant = state.tenants.find((tenant) => tenant.slug === event.target.value);
   await loadKnowledge();
   renderShell();
@@ -858,6 +1324,7 @@ async function publishVersion(event) {
 
 async function signOut() {
   if (supabase && state.session) await supabase.auth.signOut();
+  resetConversationState();
   Object.assign(state, { demo: false, session: null, page: "inicio", tenants: [], tenant: null, conocimiento: [], pendingChanges: [] });
   renderLogin();
 }

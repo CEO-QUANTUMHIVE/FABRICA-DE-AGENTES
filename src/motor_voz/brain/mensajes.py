@@ -13,7 +13,7 @@ from datetime import datetime
 from typing import Any
 
 
-CANALES_COMERCIALES = frozenset({"web", "whatsapp", "instagram", "facebook"})
+CANALES_COMERCIALES = frozenset({"web", "whatsapp", "instagram", "facebook", "telegram"})
 
 
 @dataclass(frozen=True)
@@ -136,6 +136,7 @@ class DestinoEnvio:
 @dataclass(frozen=True)
 class Conversacion:
     id: str
+    tenant_canal_id: str
     canal: str
     contacto_externo_id: str
     nombre_contacto: str
