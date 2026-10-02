@@ -17,6 +17,7 @@
   var origen = new URL(actual.src).origin;
   var api = actual.getAttribute('data-api') || origen;
   var tenant = actual.getAttribute('data-tenant') || 'quantumhive';
+  var nombre = actual.getAttribute('data-nombre') || (tenant === 'quantumhive' ? 'QuantumHive' : tenant);
   var logo = actual.getAttribute('data-logo') || '';
   var acento = actual.getAttribute('data-acento') || '';
   var acento2 = actual.getAttribute('data-acento-2') || '';
@@ -32,6 +33,7 @@
   var avatarBase = actual.getAttribute('data-avatar-base') || '';
 
   var params = new URLSearchParams({ api: api, tenant: tenant });
+  if (nombre) params.set('nombre', nombre);
   if (logo) params.set('logo', logo);
   if (acento) params.set('acento', acento);
   if (acento2) params.set('acento2', acento2);
@@ -76,7 +78,7 @@
 
   var iframe = document.createElement('iframe');
   iframe.src = origen + '/widget.html?' + params.toString();
-  iframe.title = 'Agente de ' + tenant;
+  iframe.title = 'Agente de ' + nombre;
   iframe.setAttribute('allow', 'microphone');
   iframe.style.cssText = [
     'position:fixed',

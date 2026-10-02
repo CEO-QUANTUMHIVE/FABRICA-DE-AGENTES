@@ -16,13 +16,11 @@ from motor_voz.brain.tenants.modelos import Tenant
 
 def _contexto_de_servicios(tenant: Tenant) -> str:
     if not tenant.servicios:
-        return tenant.prompt_propio
+        return ""
     lista = "\n".join(f"- {s.nombre}: {s.descripcion}" for s in tenant.servicios)
     servicios_texto = (
         f"Estos son los servicios reales de {tenant.nombre}, no inventes otros:\n{lista}"
     )
-    if tenant.prompt_propio.strip():
-        return f"{tenant.prompt_propio.strip()}\n\n{servicios_texto}"
     return servicios_texto
 
 
@@ -47,7 +45,8 @@ def _contexto_de_conocimiento(tenant: Tenant) -> str:
 
 
 def construir_contexto(tenant: Tenant, motor: str = "pipeline", canal: str = "web") -> str:
-    """Prompt final para este tenant, en este motor y este canal."""
+    """Prompt final; un prompt propio reemplaza la identidad vertical base."""
+    identidad = tenant.prompt_propio.strip() or tenant.perfil.prompt_base.strip()
     capas = [
         capa for capa in (_contexto_de_servicios(tenant), _contexto_de_conocimiento(tenant))
         if capa.strip()
@@ -55,6 +54,6 @@ def construir_contexto(tenant: Tenant, motor: str = "pipeline", canal: str = "we
     return construir(
         motor=motor,
         canal=canal,
-        identidad=tenant.perfil.prompt_base,
+        identidad=identidad,
         contexto_extra="\n\n".join(capas),
     )

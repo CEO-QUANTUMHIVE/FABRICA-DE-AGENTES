@@ -30,7 +30,13 @@ from motor_voz.api import niveles as catalogo_niveles
 from motor_voz.api.ceo import preparar_ceo, rutas_ceo
 from motor_voz.api.limites import LimiteAlcanzado, Limitador
 from motor_voz.brain import conversacion as cerebro_texto
-from motor_voz.brain.mensajes import CanalTenant, ResultadoIngreso, Turno
+from motor_voz.brain.mensajes import (
+    CanalTenant,
+    Conversacion,
+    MensajeGuardado,
+    ResultadoIngreso,
+    Turno,
+)
 from motor_voz.brain.tenants import repositorio
 from motor_voz.brain.tenants.modelos import Tenant
 from motor_voz.channels.whatsapp import firma as firma_whatsapp
@@ -66,6 +72,11 @@ ConfigurarWhatsapp = Callable[..., Awaitable[dict]]
 CompletarWhatsapp = Callable[..., Awaitable[onboarding_whatsapp.ConexionAutorizada]]
 GuardarSecreto = Callable[[str, str], None]
 InvestigarCliente = Callable[..., Awaitable[dict]]
+ConversacionesDe = Callable[[Config, str], Awaitable[list[Conversacion]]]
+ConversacionDe = Callable[..., Awaitable[Conversacion]]
+MensajesDeConversacion = Callable[..., Awaitable[list[MensajeGuardado]]]
+CambiarModoAtencion = Callable[..., Awaitable[Conversacion]]
+EncolarRespuesta = Callable[..., Awaitable[bool]]
 
 CATEGORIAS_CONOCIMIENTO = frozenset(
     {"horario", "precio", "servicio", "politica", "faq", "tono", "otro"}
@@ -77,6 +88,8 @@ CATEGORIAS_CONOCIMIENTO = frozenset(
 # .env local dice "development" y el de la VM podria decir "production", y
 # comparar contra una sola palabra dejaba el agujero abierto.
 ENTORNOS_DE_DESARROLLO = frozenset({"development", "desarrollo", "dev", "local", "test"})
+MODOS_ATENCION = frozenset({"automatico", "humano", "cerrado"})
+ROLES_QUE_ATIENDEN = frozenset({"dueño", "dueno", "empleado"})
 
 
 def _cors(respuesta: web.StreamResponse) -> web.StreamResponse:
@@ -200,6 +213,226 @@ async def listar_tenants_del_panel(peticion: web.Request) -> web.Response:
             web.json_response({"error": "No se pudieron cargar tus negocios."}, status=503)
         )
     return _cors(web.json_response({"tenants": tenants}))
+
+
+async def _contexto_del_multichat(
+    peticion: web.Request,
+) -> tuple[str | None, Tenant | None, str | None, web.Response | None]:
+    contexto = await _contexto_del_panel(
+        peticion, peticion.match_info["tenant_slug"]
+    )
+    usuario_id, tenant, rol, error = contexto
+    if error is not None:
+        return contexto
+    if rol not in ROLES_QUE_ATIENDEN:
+        return usuario_id, tenant, rol, _cors(
+            web.json_response(
+                {"error": "No tienes permiso para atender conversaciones."},
+                status=403,
+            )
+        )
+    return contexto
+
+
+def _conversacion_para_respuesta(conversacion: Conversacion) -> dict:
+    """Representacion publica: nunca devuelve ids internos del canal."""
+    return {
+        "id": conversacion.id,
+        "canal": conversacion.canal,
+        "contacto_externo_id": conversacion.contacto_externo_id,
+        "nombre_contacto": conversacion.nombre_contacto,
+        "modo_atencion": conversacion.modo_atencion,
+        "ultimo_mensaje_en": conversacion.ultimo_mensaje_en,
+    }
+
+
+def _mensaje_para_respuesta(mensaje: MensajeGuardado) -> dict:
+    return {
+        "id": mensaje.id,
+        "canal": mensaje.canal,
+        "direccion": mensaje.direccion,
+        "texto": mensaje.texto,
+        "estado": mensaje.estado,
+        "ocurrido_en": mensaje.ocurrido_en,
+    }
+
+
+async def listar_conversaciones_del_panel(peticion: web.Request) -> web.Response:
+    _, tenant, rol, error = await _contexto_del_multichat(peticion)
+    if error is not None:
+        return error
+    try:
+        funcion: ConversacionesDe = peticion.app["conversaciones_de"]
+        conversaciones = await funcion(peticion.app["config"], tenant.id)
+    except Exception:
+        logger.exception("no se pudieron listar las conversaciones del panel")
+        return _cors(
+            web.json_response(
+                {"error": "No se pudieron cargar las conversaciones."}, status=503
+            )
+        )
+    return _cors(
+        web.json_response(
+            {
+                "tenant": tenant.slug,
+                "rol": rol,
+                "conversaciones": [
+                    _conversacion_para_respuesta(item) for item in conversaciones
+                ],
+            }
+        )
+    )
+
+
+async def listar_mensajes_del_panel(peticion: web.Request) -> web.Response:
+    _, tenant, _, error = await _contexto_del_multichat(peticion)
+    if error is not None:
+        return error
+    conversacion_id = peticion.match_info["conversacion_id"]
+    try:
+        obtener: ConversacionDe = peticion.app["conversacion_de"]
+        await obtener(
+            peticion.app["config"],
+            tenant_id=tenant.id,
+            conversacion_id=conversacion_id,
+        )
+        listar: MensajesDeConversacion = peticion.app["mensajes_de_conversacion"]
+        mensajes = await listar(
+            peticion.app["config"],
+            tenant_id=tenant.id,
+            conversacion_id=conversacion_id,
+        )
+    except repositorio.ConversacionNoEncontrada:
+        return _cors(
+            web.json_response({"error": "Conversacion no encontrada."}, status=404)
+        )
+    except Exception:
+        logger.exception("no se pudieron listar los mensajes del panel")
+        return _cors(
+            web.json_response(
+                {"error": "No se pudieron cargar los mensajes."}, status=503
+            )
+        )
+    return _cors(
+        web.json_response(
+            {
+                "conversacion_id": conversacion_id,
+                "mensajes": [_mensaje_para_respuesta(item) for item in mensajes],
+            }
+        )
+    )
+
+
+async def cambiar_modo_del_panel(peticion: web.Request) -> web.Response:
+    _, tenant, _, error = await _contexto_del_multichat(peticion)
+    if error is not None:
+        return error
+    try:
+        cuerpo = await peticion.json()
+    except Exception:
+        return _cors(web.json_response({"error": "JSON invalido."}, status=400))
+    modo = str(cuerpo.get("modo") or "").strip()
+    if modo not in MODOS_ATENCION:
+        return _cors(
+            web.json_response(
+                {"error": "Modo invalido. Usa automatico, humano o cerrado."},
+                status=400,
+            )
+        )
+    try:
+        funcion: CambiarModoAtencion = peticion.app["cambiar_modo_atencion"]
+        conversacion = await funcion(
+            peticion.app["config"],
+            tenant_id=tenant.id,
+            conversacion_id=peticion.match_info["conversacion_id"],
+            modo=modo,
+        )
+    except repositorio.ConversacionNoEncontrada:
+        return _cors(
+            web.json_response({"error": "Conversacion no encontrada."}, status=404)
+        )
+    except Exception:
+        logger.exception("no se pudo cambiar el modo de atencion")
+        return _cors(
+            web.json_response(
+                {"error": "No se pudo cambiar el modo de atencion."}, status=503
+            )
+        )
+    return _cors(
+        web.json_response(
+            {
+                "conversacion_id": conversacion.id,
+                "modo_atencion": conversacion.modo_atencion,
+            }
+        )
+    )
+
+
+async def enviar_mensaje_humano_del_panel(peticion: web.Request) -> web.Response:
+    usuario_id, tenant, _, error = await _contexto_del_multichat(peticion)
+    if error is not None:
+        return error
+    try:
+        cuerpo = await peticion.json()
+    except Exception:
+        return _cors(web.json_response({"error": "JSON invalido."}, status=400))
+    texto = str(cuerpo.get("texto") or "").strip()
+    if not texto or len(texto) > 4000:
+        return _cors(
+            web.json_response(
+                {"error": "El texto debe tener entre 1 y 4000 caracteres."},
+                status=400,
+            )
+        )
+
+    conversacion_id = peticion.match_info["conversacion_id"]
+    try:
+        cambiar: CambiarModoAtencion = peticion.app["cambiar_modo_atencion"]
+        conversacion = await cambiar(
+            peticion.app["config"],
+            tenant_id=tenant.id,
+            conversacion_id=conversacion_id,
+            modo="humano",
+        )
+        encolar: EncolarRespuesta = peticion.app["encolar_respuesta"]
+        encolado = await encolar(
+            peticion.app["config"],
+            tenant_id=tenant.id,
+            tenant_canal_id=conversacion.tenant_canal_id,
+            conversacion_id=conversacion.id,
+            canal=conversacion.canal,
+            clave_idempotencia=(
+                f"humano:{conversacion.id}:{secrets.token_urlsafe(18)}"
+            ),
+            payload={"texto": texto},
+        )
+    except repositorio.ConversacionNoEncontrada:
+        return _cors(
+            web.json_response({"error": "Conversacion no encontrada."}, status=404)
+        )
+    except Exception:
+        logger.exception(
+            "no se pudo encolar el mensaje humano | tenant=%s usuario=%s",
+            tenant.id,
+            usuario_id,
+        )
+        return _cors(
+            web.json_response({"error": "No se pudo enviar el mensaje."}, status=503)
+        )
+    if not encolado:
+        return _cors(
+            web.json_response({"error": "No se pudo enviar el mensaje."}, status=503)
+        )
+    return _cors(
+        web.json_response(
+            {
+                "conversacion_id": conversacion.id,
+                "modo_atencion": "humano",
+                "encolado": True,
+            },
+            status=202,
+        )
+    )
 
 
 async def listar_conocimiento_del_panel(peticion: web.Request) -> web.Response:
@@ -1099,6 +1332,11 @@ def crear_app(
     completar_whatsapp_fn: CompletarWhatsapp | None = None,
     guardar_secreto_whatsapp_fn: GuardarSecreto | None = None,
     investigar_cliente_fn: InvestigarCliente | None = None,
+    conversaciones_de_fn: ConversacionesDe | None = None,
+    conversacion_de_fn: ConversacionDe | None = None,
+    mensajes_de_conversacion_fn: MensajesDeConversacion | None = None,
+    cambiar_modo_atencion_fn: CambiarModoAtencion | None = None,
+    encolar_respuesta_fn: EncolarRespuesta | None = None,
     registro_workers_ceo: RegistroWorkers | None = None,
 ) -> web.Application:
     cfg = config or cargar()
@@ -1152,6 +1390,17 @@ def crear_app(
     app["registrar_mensaje_entrante"] = (
         registrar_mensaje_entrante or repositorio.registrar_mensaje_entrante
     )
+    app["conversaciones_de"] = (
+        conversaciones_de_fn or repositorio.conversaciones_de
+    )
+    app["conversacion_de"] = conversacion_de_fn or repositorio.conversacion_de
+    app["mensajes_de_conversacion"] = (
+        mensajes_de_conversacion_fn or repositorio.mensajes_de_conversacion
+    )
+    app["cambiar_modo_atencion"] = (
+        cambiar_modo_atencion_fn or repositorio.cambiar_modo_atencion
+    )
+    app["encolar_respuesta"] = encolar_respuesta_fn or repositorio.encolar_respuesta
     app["limitador"] = Limitador(
         por_ip_hora=cfg.max_sesiones_por_ip_hora,
         por_dia=cfg.max_sesiones_por_dia,
@@ -1177,6 +1426,22 @@ def crear_app(
             web.post(
                 "/api/panel/{tenant_slug}/conocimiento/{version_id}/publicar",
                 publicar_version_del_panel,
+            ),
+            web.get(
+                "/api/panel/{tenant_slug}/conversaciones",
+                listar_conversaciones_del_panel,
+            ),
+            web.get(
+                "/api/panel/{tenant_slug}/conversaciones/{conversacion_id}/mensajes",
+                listar_mensajes_del_panel,
+            ),
+            web.post(
+                "/api/panel/{tenant_slug}/conversaciones/{conversacion_id}/modo",
+                cambiar_modo_del_panel,
+            ),
+            web.post(
+                "/api/panel/{tenant_slug}/conversaciones/{conversacion_id}/mensajes",
+                enviar_mensaje_humano_del_panel,
             ),
             # La fabrica. Detras de sesion Y de la lista de operadores: un
             # dueño de negocio tiene sesion y no puede dar de alta a nadie.

@@ -19,6 +19,7 @@ from typing import Awaitable, Callable
 from motor_voz.brain.mensajes import EventoOutbox
 from motor_voz.brain.tenants import repositorio
 from motor_voz.channels import secretos
+from motor_voz.channels.telegram import cliente as cliente_telegram
 from motor_voz.channels.whatsapp import cliente as cliente_whatsapp
 from motor_voz.config import Config
 
@@ -49,7 +50,10 @@ class Dependencias:
             destino_de=repositorio.destino_de_envio,
             registrar_saliente=repositorio.registrar_mensaje_saliente,
             resolver_secreto=secretos.resolver,
-            enviadores={"whatsapp": cliente_whatsapp.enviar_texto},
+            enviadores={
+                "whatsapp": cliente_whatsapp.enviar_texto,
+                "telegram": cliente_telegram.enviar_texto,
+            },
         )
 
 

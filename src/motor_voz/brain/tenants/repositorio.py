@@ -282,7 +282,7 @@ async def conversaciones_de(
     respuesta = (
         await cliente.table("conversaciones")
         .select(
-            "id, canal, contacto_externo_id, nombre_contacto, "
+            "id, tenant_canal_id, canal, contacto_externo_id, nombre_contacto, "
             "modo_atencion, ultimo_mensaje_en"
         )
         .eq("tenant_id", tenant_id)
@@ -291,6 +291,61 @@ async def conversaciones_de(
         .execute()
     )
     return [Conversacion(**fila) for fila in (respuesta.data or [])]
+
+
+async def conversacion_de(
+    config: Config, *, tenant_id: str, conversacion_id: str
+) -> Conversacion:
+    """Obtiene una conversacion solo cuando pertenece al tenant indicado."""
+    cliente = await _cliente(config)
+    respuesta = (
+        await cliente.table("conversaciones")
+        .select(
+            "id, tenant_canal_id, canal, contacto_externo_id, nombre_contacto, "
+            "modo_atencion, ultimo_mensaje_en"
+        )
+        .eq("tenant_id", tenant_id)
+        .eq("id", conversacion_id)
+        .maybe_single()
+        .execute()
+    )
+    if respuesta is None or respuesta.data is None:
+        raise ConversacionNoEncontrada(
+            f"No hay conversacion '{conversacion_id}' en ese tenant"
+        )
+    return Conversacion(**respuesta.data)
+
+
+async def cambiar_modo_atencion(
+    config: Config, *, tenant_id: str, conversacion_id: str, modo: str
+) -> Conversacion:
+    """Cambia el handoff humano sin permitir cruces entre tenants."""
+    if modo not in {"automatico", "humano", "cerrado"}:
+        raise ValueError("modo de atencion invalido")
+
+    cliente = await _cliente(config)
+    respuesta = (
+        await cliente.table("conversaciones")
+        .update({"modo_atencion": modo})
+        .eq("tenant_id", tenant_id)
+        .eq("id", conversacion_id)
+        .execute()
+    )
+    filas = respuesta.data or []
+    if not isinstance(filas, list) or not filas:
+        raise ConversacionNoEncontrada(
+            f"No hay conversacion '{conversacion_id}' en ese tenant"
+        )
+    fila = filas[0]
+    return Conversacion(
+        id=fila["id"],
+        tenant_canal_id=fila["tenant_canal_id"],
+        canal=fila["canal"],
+        contacto_externo_id=fila["contacto_externo_id"],
+        nombre_contacto=fila.get("nombre_contacto") or "",
+        modo_atencion=fila["modo_atencion"],
+        ultimo_mensaje_en=fila.get("ultimo_mensaje_en"),
+    )
 
 
 async def mensajes_de_conversacion(
