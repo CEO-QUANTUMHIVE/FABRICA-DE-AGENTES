@@ -413,3 +413,25 @@ export function hallazgosGenerales(paquete = {}) {
   if (colores.length) generales.push(`${colores.length} colores de marca`);
   return generales;
 }
+
+/**
+ * Lo mínimo para mandar un mensaje de prueba por WhatsApp Cloud API.
+ *
+ * Meta no acepta signos en `to`: el más, los espacios, los guiones y los
+ * paréntesis son cosa del teclado humano. Devuelve `ok: false` con el aviso
+ * en vez de lanzar, para que el panel lo muestre tal cual.
+ */
+export function prepararPruebaWhatsapp({ destino = "", texto = "" } = {}) {
+  const mensaje = String(texto).trim();
+  if (!mensaje || mensaje.length > 4000) {
+    return { ok: false, error: "El mensaje debe tener entre 1 y 4000 caracteres." };
+  }
+  const teclado = String(destino).trim();
+  if (!/^\+?[\d\s().-]{7,25}$/.test(teclado)) {
+    return { ok: false, error: "El destino debe ser un número de teléfono." };
+  }
+  return {
+    ok: true,
+    envio: { destino: teclado.replace(/\D/g, ""), texto: mensaje },
+  };
+}

@@ -7,6 +7,7 @@ import pytest
 from motor_voz import config as config_mod
 from motor_voz.api import servidor
 from motor_voz.brain.tenants.modelos import PerfilTenant, Tenant
+from motor_voz.channels.whatsapp.cliente import Resultado
 from motor_voz.channels.whatsapp.onboarding import ConexionAutorizada
 
 DUENO = "sergio"
@@ -79,6 +80,7 @@ async def _cliente(
     config=None,
     completar_whatsapp_fn=None,
     guardar_secreto_whatsapp_fn=None,
+    enviar_texto_whatsapp_fn=None,
 ):
     app = servidor.crear_app(
         config or _config(),
@@ -89,6 +91,7 @@ async def _cliente(
         configurar_whatsapp_fn=canales.configurar,
         completar_whatsapp_fn=completar_whatsapp_fn,
         guardar_secreto_whatsapp_fn=guardar_secreto_whatsapp_fn,
+        enviar_texto_whatsapp_fn=enviar_texto_whatsapp_fn,
     )
     return await aiohttp_client(app)
 
@@ -252,3 +255,141 @@ async def test_configuracion_embedded_signup_solo_expone_datos_publicos(
     assert "firma-privada" not in str(cuerpo)
     assert "verificacion-privada" not in str(cuerpo)
     assert "123456" not in str(cuerpo)
+
+
+# --- Prueba de envio ------------------------------------------------------
+#
+# El panel no puede iniciar una conversacion de WhatsApp: esa conversacion
+# nace unicamente de un webhook entrante (payload.py), y nadie le escribe al
+# numero de prueba de Meta. Sin un boton que llame enviar_texto() directo,
+# la Fabrica no puede mandar un mensaje en frio.
+
+
+async def test_solo_el_dueno_puede_enviar_una_prueba(aiohttp_client, canales):
+    cliente = await _cliente(aiohttp_client, canales)
+    respuesta = await cliente.post(
+        "/api/panel/quantumhive/canales/whatsapp/prueba",
+        json={"destino": "5491155555555", "texto": "Hola"},
+        headers=_auth(EMPLEADO),
+    )
+
+    assert respuesta.status == 403
+    assert canales.guardados == []
+
+
+async def test_envia_la_prueba_desde_el_canal_del_tenant(
+    aiohttp_client, canales, monkeypatch
+):
+    monkeypatch.setenv("SECRETO_WHATSAPP_QUANTUMHIVE", "token-real-simulado")
+    envios: list[dict] = []
+
+    async def enviar(config, **datos):
+        envios.append(datos)
+        return Resultado(ok=True, mensaje_externo_id="wamid.ABC123")
+
+    cliente = await _cliente(
+        aiohttp_client, canales, enviar_texto_whatsapp_fn=enviar
+    )
+    respuesta = await cliente.post(
+        "/api/panel/quantumhive/canales/whatsapp/prueba",
+        json={"destino": "+54 9 11 5555-5555", "texto": "Hola desde la Fabrica"},
+        headers=_auth(),
+    )
+
+    cuerpo = await respuesta.json()
+    assert respuesta.status == 200
+    assert cuerpo == {"ok": True, "mensaje_externo_id": "wamid.ABC123"}
+    # Meta no acepta signos en `to`: el guion, el espacio y el mas no viajan.
+    assert envios == [
+        {
+            "token": "token-real-simulado",
+            "phone_number_id": "123456789",
+            "destino": "5491155555555",
+            "texto": "Hola desde la Fabrica",
+        }
+    ]
+    assert "token-real-simulado" not in str(cuerpo)
+
+
+async def test_no_envia_si_el_tenant_no_tiene_canal(aiohttp_client, canales):
+    canales.filas.clear()
+    cliente = await _cliente(aiohttp_client, canales)
+    respuesta = await cliente.post(
+        "/api/panel/quantumhive/canales/whatsapp/prueba",
+        json={"destino": "5491155555555", "texto": "Hola"},
+        headers=_auth(),
+    )
+
+    assert respuesta.status == 409
+
+
+async def test_no_envia_si_falta_el_token(aiohttp_client, canales):
+    cliente = await _cliente(aiohttp_client, canales)
+    respuesta = await cliente.post(
+        "/api/panel/quantumhive/canales/whatsapp/prueba",
+        json={"destino": "5491155555555", "texto": "Hola"},
+        headers=_auth(),
+    )
+
+    assert respuesta.status == 409
+
+
+async def test_avisa_si_meta_rechaza_el_envio(aiohttp_client, canales, monkeypatch):
+    monkeypatch.setenv("SECRETO_WHATSAPP_QUANTUMHIVE", "token-real-simulado")
+
+    async def enviar(config, **datos):
+        return Resultado(ok=False, error="Meta respondio 401", reintentable=False)
+
+    cliente = await _cliente(
+        aiohttp_client, canales, enviar_texto_whatsapp_fn=enviar
+    )
+    respuesta = await cliente.post(
+        "/api/panel/quantumhive/canales/whatsapp/prueba",
+        json={"destino": "5491155555555", "texto": "Hola"},
+        headers=_auth(),
+    )
+
+    cuerpo = await respuesta.json()
+    assert respuesta.status == 502
+    assert cuerpo == {"error": "Meta respondio 401"}
+    assert "token-real-simulado" not in str(cuerpo)
+
+
+async def test_rechaza_destino_sin_numeros(aiohttp_client, canales, monkeypatch):
+    monkeypatch.setenv("SECRETO_WHATSAPP_QUANTUMHIVE", "token-real-simulado")
+    envios: list[dict] = []
+
+    async def enviar(config, **datos):
+        envios.append(datos)
+        return Resultado(ok=True, mensaje_externo_id="nunca-deberia-llegar")
+
+    cliente = await _cliente(
+        aiohttp_client, canales, enviar_texto_whatsapp_fn=enviar
+    )
+    respuesta = await cliente.post(
+        "/api/panel/quantumhive/canales/whatsapp/prueba",
+        json={"destino": "no-es-un-telefono", "texto": "Hola"},
+        headers=_auth(),
+    )
+
+    assert respuesta.status == 400
+    assert envios == []
+
+
+async def test_devuelve_503_si_no_se_pueden_listar_los_canales(
+    aiohttp_client, canales, monkeypatch
+):
+    monkeypatch.setenv("SECRETO_WHATSAPP_QUANTUMHIVE", "token-real-simulado")
+
+    async def listar_rota(config, tenant_id):
+        raise RuntimeError("supabase no responde")
+
+    canales.listar = listar_rota
+    cliente = await _cliente(aiohttp_client, canales)
+    respuesta = await cliente.post(
+        "/api/panel/quantumhive/canales/whatsapp/prueba",
+        json={"destino": "5491155555555", "texto": "Hola"},
+        headers=_auth(),
+    )
+
+    assert respuesta.status == 503

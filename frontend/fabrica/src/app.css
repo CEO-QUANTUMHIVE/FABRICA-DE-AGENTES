@@ -492,6 +492,10 @@ body[data-connected="true"] .agent-vat { box-shadow: inset 0 0 65px rgba(82,231,
 .whatsapp-console__copy h2 { margin:.4rem 0;font:500 clamp(1.45rem,3vw,2.15rem) Georgia,serif;color:var(--gold-soft); }
 .whatsapp-console__copy p { max-width:36rem;color:#858991;font-size:.78rem;line-height:1.6; }
 .whatsapp-form { padding:1rem;border:1px solid rgba(255,255,255,.08);border-radius:13px;background:rgba(2,7,7,.58); }
+.whatsapp-test { display:grid;gap:.35rem;margin-top:1rem;padding-top:1rem;border-top:1px solid rgba(255,255,255,.08); }
+.whatsapp-test[hidden] { display:none; }
+.whatsapp-test .field-label { margin-top:.35rem; }
+.whatsapp-test .primary-button { width:100%;margin-top:.7rem; }
 .readiness { display:flex;flex-wrap:wrap;gap:.4rem;margin-top:1rem; }
 .readiness span { padding:.42rem .58rem;border:1px solid rgba(255,122,122,.22);border-radius:99px;color:#b98282;background:rgba(255,90,90,.045);font-size:.58rem; }
 .readiness span::before { content:"○";margin-right:.34rem; }

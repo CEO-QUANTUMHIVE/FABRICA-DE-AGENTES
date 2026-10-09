@@ -11,6 +11,7 @@ import {
   normalizarPerfil,
   objetivosDeInvestigacion,
   perfilVacio,
+  prepararPruebaWhatsapp,
   promptDesdeFicha,
   progresoDelPerfil,
   resumenDeFuentes,
@@ -398,6 +399,17 @@ function plantilla() {
             <button class="primary-button" id="whatsapp-connect" type="button">Conectar mi WhatsApp Business</button>
           </div>
           <p class="dialog-message" id="whatsapp-message">Ingresá como dueño para configurar el canal.</p>
+          <div class="whatsapp-test" id="whatsapp-test" hidden>
+            <span class="module-number">PRUEBA DE ENVÍO</span>
+            <label class="field-label" for="whatsapp-test-destino">Número que recibe</label>
+            <input id="whatsapp-test-destino" type="tel" autocomplete="tel" placeholder="+54 9 11 0000-0000" />
+            <label class="field-label" for="whatsapp-test-texto">Mensaje</label>
+            <textarea id="whatsapp-test-texto" rows="3">Hola, te escribe QuantumHive.</textarea>
+            <div class="dialog-actions">
+              <button class="primary-button" id="whatsapp-test-send" type="button">Enviar mensaje de prueba</button>
+            </div>
+            <p class="dialog-message" id="whatsapp-test-message"></p>
+          </div>
         </div>
       </section>
     </main>
@@ -523,6 +535,7 @@ function bind() {
   document.querySelector("#draft-button").addEventListener("click", abrirBorrador);
   document.querySelector("#draft-form").addEventListener("submit", crearAgenteBorrador);
   document.querySelector("#whatsapp-connect").addEventListener("click", conectarWhatsapp);
+  document.querySelector("#whatsapp-test-send").addEventListener("click", enviarPruebaWhatsapp);
   document.querySelector("#logo-input").addEventListener("change", cargarLogo);
   document.querySelector("#logo-remove").addEventListener("click", quitarLogo);
   document.querySelector("#voice-live-button").addEventListener("click", alternarVozReal);
@@ -1382,6 +1395,13 @@ function renderWhatsapp() {
         ? "Volver a autorizar WhatsApp"
         : "Conectar mi WhatsApp Business";
   }
+  // El envío en frío sólo tiene sentido con un canal ya conectado: sin el
+  // phone_number_id de Meta no hay desde dónde mandar.
+  const prueba = document.querySelector("#whatsapp-test");
+  const botonPrueba = document.querySelector("#whatsapp-test-send");
+  const conectado = canal?.estado === "conectado";
+  if (prueba) prueba.hidden = !(state.session && state.whatsappDisponible && conectado);
+  if (botonPrueba) botonPrueba.disabled = !state.session || !conectado;
 }
 
 function cargarSdkMeta(appId, version) {
@@ -1489,6 +1509,34 @@ async function terminarConexionWhatsapp() {
     alta.code = "";
     renderWhatsapp();
     mensaje.textContent = resultadoFinal;
+  }
+}
+
+async function enviarPruebaWhatsapp() {
+  const mensaje = document.querySelector("#whatsapp-test-message");
+  const boton = document.querySelector("#whatsapp-test-send");
+  const preparado = prepararPruebaWhatsapp({
+    destino: document.querySelector("#whatsapp-test-destino")?.value,
+    texto: document.querySelector("#whatsapp-test-texto")?.value,
+  });
+  if (!preparado.ok) {
+    mensaje.textContent = preparado.error;
+    return;
+  }
+  boton.disabled = true;
+  mensaje.textContent = "Enviando el mensaje…";
+  try {
+    const resultado = await api(rutaDelTenant("/canales/whatsapp/prueba"), {
+      method: "POST",
+      body: JSON.stringify(preparado.envio),
+    });
+    mensaje.textContent = resultado.mensaje_externo_id
+      ? `Mensaje enviado. Referencia de Meta: ${resultado.mensaje_externo_id}.`
+      : "Mensaje enviado.";
+  } catch (fallo) {
+    mensaje.textContent = fallo.message;
+  } finally {
+    boton.disabled = false;
   }
 }
 

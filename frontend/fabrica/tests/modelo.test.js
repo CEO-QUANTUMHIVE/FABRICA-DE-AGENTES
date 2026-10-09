@@ -14,6 +14,7 @@ import {
   normalizarPerfil,
   objetivosDeInvestigacion,
   perfilVacio,
+  prepararPruebaWhatsapp,
   progresoDelPerfil,
   promptDesdeFicha,
   resumenDeFuentes,
@@ -203,4 +204,41 @@ test("los hallazgos sin fuente atribuible van aparte", () => {
     marca: { logo_url: "https://x.test/l.png", colores: ["#112233"] },
   });
   assert.deepEqual(generales, ["2 servicios", "horarios", "1 preguntas frecuentes", "logo", "1 colores de marca"]);
+});
+
+test("la prueba de WhatsApp deja el destino sólo en dígitos y el texto recortado", () => {
+  const preparado = prepararPruebaWhatsapp({
+    destino: "+54 9 11 5555-5555",
+    texto: "  Hola desde la fábrica  ",
+  });
+  assert.deepEqual(preparado, {
+    ok: true,
+    envio: { destino: "5491155555555", texto: "Hola desde la fábrica" },
+  });
+});
+
+test("la prueba de WhatsApp no se arma con un destino que no es teléfono", () => {
+  const preparado = prepararPruebaWhatsapp({
+    destino: "no-es-un-telefono",
+    texto: "Hola",
+  });
+  assert.equal(preparado.ok, false);
+  assert.match(preparado.error, /teléfono/i);
+});
+
+test("la prueba de WhatsApp no se arma sin texto", () => {
+  const preparado = prepararPruebaWhatsapp({
+    destino: "5491155555555",
+    texto: "    ",
+  });
+  assert.equal(preparado.ok, false);
+  assert.match(preparado.error, /mensaje/i);
+});
+
+test("la prueba de WhatsApp rechaza un texto más largo que lo que Meta acepta", () => {
+  const preparado = prepararPruebaWhatsapp({
+    destino: "5491155555555",
+    texto: "x".repeat(4001),
+  });
+  assert.equal(preparado.ok, false);
 });

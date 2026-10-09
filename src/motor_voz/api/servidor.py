@@ -40,6 +40,7 @@ from motor_voz.brain.mensajes import (
 from motor_voz.brain.tenants import repositorio
 from motor_voz.brain.tenants.modelos import Tenant
 from motor_voz.channels.whatsapp import firma as firma_whatsapp
+from motor_voz.channels.whatsapp import cliente as cliente_whatsapp
 from motor_voz.channels.whatsapp import onboarding as onboarding_whatsapp
 from motor_voz.channels.whatsapp import payload as payload_whatsapp
 from motor_voz.channels import secretos as secretos_canal
@@ -71,6 +72,7 @@ CanalesParaPanel = Callable[[Config, str], Awaitable[list[dict]]]
 ConfigurarWhatsapp = Callable[..., Awaitable[dict]]
 CompletarWhatsapp = Callable[..., Awaitable[onboarding_whatsapp.ConexionAutorizada]]
 GuardarSecreto = Callable[[str, str], None]
+EnviarTextoWhatsapp = Callable[..., Awaitable[cliente_whatsapp.Resultado]]
 InvestigarCliente = Callable[..., Awaitable[dict]]
 ConversacionesDe = Callable[[Config, str], Awaitable[list[Conversacion]]]
 ConversacionDe = Callable[..., Awaitable[Conversacion]]
@@ -1020,6 +1022,123 @@ async def configurar_whatsapp_del_panel(peticion: web.Request) -> web.Response:
     return _cors(web.json_response({"canal": seguro}, status=200))
 
 
+# Meta no acepta signos en `to`: el mas, los espacios, los guiones y los
+# parentesis son cosa del teclado humano, no del API.
+_DESTINO_TECLADO = re.compile(r"^\+?[\d\s().-]{7,25}$")
+_DESTINO_DIGITOS = re.compile(r"\D")
+
+
+async def _canal_whatsapp_de(peticion: web.Request, tenant_id: str) -> str | None:
+    """phone_number_id del canal de WhatsApp del tenant, si ya hay uno."""
+    filas = await peticion.app["canales_para_panel"](
+        peticion.app["config"], tenant_id
+    )
+    for fila in filas:
+        if fila.get("canal") == "whatsapp":
+            return str(fila.get("cuenta_externa_id") or "").strip() or None
+    return None
+
+
+async def enviar_prueba_whatsapp_del_panel(peticion: web.Request) -> web.Response:
+    """Manda un mensaje en frio por el canal ya conectado del tenant.
+
+    El panel no puede abrir una conversacion de WhatsApp: eso nace unicamente
+    de un webhook entrante, y nadie le escribe al numero de prueba de Meta.
+    Por eso este camino llama enviar_texto() directo y no pasa por la cola.
+    """
+    _usuario_id, tenant, rol, error = await _contexto_del_panel(
+        peticion, peticion.match_info["tenant_slug"]
+    )
+    if error is not None:
+        return error
+    if rol != "dueño":
+        return _cors(
+            web.json_response(
+                {"error": "Solo el dueño puede mandar mensajes de prueba."},
+                status=403,
+            )
+        )
+    try:
+        cuerpo = await peticion.json()
+    except Exception:
+        return _cors(web.json_response({"error": "Cuerpo invalido."}, status=400))
+
+    texto = str(cuerpo.get("texto") or "").strip()
+    if not texto or len(texto) > 4000:
+        return _cors(
+            web.json_response(
+                {"error": "El texto debe tener entre 1 y 4000 caracteres."},
+                status=400,
+            )
+        )
+
+    destino = str(cuerpo.get("destino") or "").strip()
+    if not _DESTINO_TECLADO.fullmatch(destino):
+        return _cors(
+            web.json_response(
+                {"error": "El destino debe ser un numero de telefono."}, status=400
+            )
+        )
+    destino = _DESTINO_DIGITOS.sub("", destino)
+
+    try:
+        phone_number_id = await _canal_whatsapp_de(peticion, tenant.id)
+    except Exception:
+        logger.exception("no se pudieron listar los canales | tenant=%s", tenant.slug)
+        return _cors(
+            web.json_response(
+                {"error": "No se pudieron cargar los canales."}, status=503
+            )
+        )
+    if not phone_number_id:
+        return _cors(
+            web.json_response(
+                {"error": "Todavia no hay un WhatsApp conectado en este tenant."},
+                status=409,
+            )
+        )
+
+    secreto_ref = f"whatsapp_{tenant.slug}"
+    try:
+        token = secretos_canal.resolver(secreto_ref)
+    except secretos_canal.SecretoNoEncontrado:
+        return _cors(
+            web.json_response(
+                {
+                    "error": "Falta el token de Meta en el servidor.",
+                    "preparacion": _preparacion_whatsapp(
+                        peticion.app["config"], secreto_ref
+                    ),
+                },
+                status=409,
+            )
+        )
+
+    try:
+        resultado = await peticion.app["enviar_texto_whatsapp"](
+            peticion.app["config"],
+            token=token,
+            phone_number_id=phone_number_id,
+            destino=destino,
+            texto=texto,
+        )
+    except Exception:
+        logger.exception("no se pudo mandar la prueba | tenant=%s", tenant.slug)
+        return _cors(
+            web.json_response({"error": "No se pudo enviar el mensaje."}, status=502)
+        )
+
+    if not resultado.ok:
+        return _cors(
+            web.json_response({"error": resultado.error}, status=502)
+        )
+    return _cors(
+        web.json_response(
+            {"ok": True, "mensaje_externo_id": resultado.mensaje_externo_id}
+        )
+    )
+
+
 async def configuracion_onboarding_whatsapp(peticion: web.Request) -> web.Response:
     """Configuración pública del SDK oficial, solo para el dueño del tenant."""
     _usuario_id, _tenant, rol, error = await _contexto_del_panel(
@@ -1331,6 +1450,7 @@ def crear_app(
     configurar_whatsapp_fn: ConfigurarWhatsapp | None = None,
     completar_whatsapp_fn: CompletarWhatsapp | None = None,
     guardar_secreto_whatsapp_fn: GuardarSecreto | None = None,
+    enviar_texto_whatsapp_fn: EnviarTextoWhatsapp | None = None,
     investigar_cliente_fn: InvestigarCliente | None = None,
     conversaciones_de_fn: ConversacionesDe | None = None,
     conversacion_de_fn: ConversacionDe | None = None,
@@ -1384,6 +1504,9 @@ def crear_app(
     app["completar_whatsapp"] = completar_whatsapp_fn or onboarding_whatsapp.completar
     app["guardar_secreto_whatsapp"] = (
         guardar_secreto_whatsapp_fn or secretos_canal.guardar
+    )
+    app["enviar_texto_whatsapp"] = (
+        enviar_texto_whatsapp_fn or cliente_whatsapp.enviar_texto
     )
     app["investigar_cliente"] = investigar_cliente_fn or perfilador.investigar
     app["canal_de_cuenta"] = canal_de_cuenta or repositorio.canal_de_cuenta
@@ -1450,6 +1573,12 @@ def crear_app(
             web.post(
                 "/api/panel/{tenant_slug}/canales/whatsapp",
                 configurar_whatsapp_del_panel,
+            ),
+            # Enviar en frio sin conversacion previa. Ver
+            # enviar_prueba_whatsapp_del_panel.
+            web.post(
+                "/api/panel/{tenant_slug}/canales/whatsapp/prueba",
+                enviar_prueba_whatsapp_del_panel,
             ),
             web.get(
                 "/api/panel/{tenant_slug}/canales/whatsapp/onboarding",
