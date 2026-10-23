@@ -20,7 +20,7 @@ contenedores `qh-*`, túneles, rebuild del motor.
 ssh -i "%CLAVE_SSH_VM%" ubuntu@$VM_ORACLE_HOST
 ```
 
-- La clave `quantumcore_oracle` está instalada en `~/.ssh/authorized_keys`
+- La clave `%CLAVE_SSH_VM%` está instalada en `~/.ssh/authorized_keys`
   de la VM desde el 2026-09-27. Antes de esa fecha **no entraba** y el error
   era `Permission denied (publickey)`: no es que la clave esté mal, es que
   la clave pública no estaba en la VM.
